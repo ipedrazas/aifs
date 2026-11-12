@@ -101,6 +101,12 @@ func TestGenerationFlow(t *testing.T) {
 		t.Errorf("delete used photoshoot: %d", rec.Code)
 	}
 
+	// The product it used cannot be deleted.
+	if rec := do(t, h, http.MethodDelete, "/api/v1/products/"+strconv.FormatInt(ps.ProductID, 10), c); rec.Code != http.StatusConflict ||
+		!strings.Contains(rec.Body.String(), "traceability") {
+		t.Errorf("delete used product: %d %s", rec.Code, rec.Body)
+	}
+
 	// The model it used can no longer be hard-deleted.
 	rec = do(t, h, http.MethodDelete, "/api/v1/models/"+strconv.FormatInt(ps.ModelID, 10), c)
 	if rec.Code != http.StatusOK || !decode[catalog.Model](t, rec).Archived {
