@@ -16,13 +16,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/ipedrazas/aifs/api/internal/auth"
+	"github.com/ipedrazas/aifs/api/internal/blob"
+	"github.com/ipedrazas/aifs/api/internal/catalog"
 	"github.com/ipedrazas/aifs/api/internal/config"
 	"github.com/ipedrazas/aifs/api/internal/db"
 	"github.com/ipedrazas/aifs/api/internal/httpapi"
+	"github.com/ipedrazas/aifs/api/internal/media"
 	"github.com/ipedrazas/aifs/api/internal/version"
 	"github.com/ipedrazas/aifs/api/internal/webui"
 )
@@ -101,14 +105,22 @@ func serve() error {
 		return fmt.Errorf("auth: %w", err)
 	}
 
+	blobs, err := blob.NewFS(filepath.Join(cfg.DataDir, "blobs"))
+	if err != nil {
+		return fmt.Errorf("blob store: %w", err)
+	}
+
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: httpapi.New(httpapi.Deps{
-			Logger:       log,
-			DB:           database,
-			Web:          webui.FS(),
-			Auth:         authn,
-			CookieSecure: cfg.CookieSecure,
+			Logger:         log,
+			DB:             database,
+			Web:            webui.FS(),
+			Auth:           authn,
+			CookieSecure:   cfg.CookieSecure,
+			Catalog:        catalog.New(database, blobs, log),
+			Media:          media.New(database, blobs),
+			MaxUploadBytes: cfg.MaxUploadBytes,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       2 * time.Minute, // uploads arrive in later phases

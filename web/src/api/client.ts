@@ -3,6 +3,10 @@ import type { components, paths } from './schema'
 
 export type Version = components['schemas']['Version']
 export type Session = components['schemas']['Session']
+export type Product = components['schemas']['Product']
+export type ProductInput = components['schemas']['ProductInput']
+export type ProductImage = components['schemas']['ProductImage']
+export type View = components['schemas']['View']
 type ErrorBody = components['schemas']['Error']
 
 export const api = createClient<paths>({
@@ -20,13 +24,22 @@ export class ApiError extends Error {
   readonly code: string
   /** Seconds from a Retry-After header, when present. */
   readonly retryAfter?: number
+  /** Per-field reasons for validation errors. */
+  readonly fields: Record<string, string>
 
-  constructor(status: number, code: string, message: string, retryAfter?: number) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    retryAfter?: number,
+    fields: Record<string, string> = {},
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.retryAfter = retryAfter
+    this.fields = fields
   }
 }
 
@@ -45,5 +58,11 @@ export function unwrap<T>(result: { data?: T; error?: unknown; response: Respons
     body?.error?.code ?? 'unknown',
     body?.error?.message ?? `Request failed: ${response.status}`,
     Number.isFinite(retry) && retry > 0 ? retry : undefined,
+    body?.error?.fields ?? {},
   )
+}
+
+/** URL of stored image bytes; with width, an upright JPEG thumbnail. */
+export function blobUrl(hash: string, width?: number): string {
+  return `/api/v1/blobs/${hash}${width ? `?w=${width}` : ''}`
 }

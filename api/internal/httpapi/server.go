@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/ipedrazas/aifs/api/internal/auth"
+	"github.com/ipedrazas/aifs/api/internal/catalog"
+	"github.com/ipedrazas/aifs/api/internal/media"
 	"github.com/ipedrazas/aifs/api/internal/version"
 )
 
@@ -38,6 +40,12 @@ type Deps struct {
 	// CookieSecure sets the Secure flag (and the __Host- prefix) on the
 	// session cookie.
 	CookieSecure bool
+	// Catalog manages products and reference photographs.
+	Catalog *catalog.Service
+	// Media serves stored images and thumbnails.
+	Media *media.Service
+	// MaxUploadBytes bounds a single uploaded photograph.
+	MaxUploadBytes int64
 }
 
 // New returns the root handler.
@@ -53,6 +61,18 @@ func New(d Deps) http.Handler {
 	api.HandleFunc("GET /api/v1/session", sessions.get)
 	api.HandleFunc("DELETE /api/v1/session", sessions.logout)
 	api.HandleFunc("GET /api/v1/version", versionInfo(d))
+
+	products := productHandlers{d: d}
+	api.HandleFunc("GET /api/v1/products", products.list)
+	api.HandleFunc("POST /api/v1/products", products.create)
+	api.HandleFunc("GET /api/v1/products/{id}", products.get)
+	api.HandleFunc("PATCH /api/v1/products/{id}", products.update)
+	api.HandleFunc("DELETE /api/v1/products/{id}", products.delete)
+	api.HandleFunc("POST /api/v1/products/{id}/images", products.uploadImage)
+	api.HandleFunc("DELETE /api/v1/products/{id}/images/{imageId}", products.deleteImage)
+
+	api.HandleFunc("GET /api/v1/blobs/{hash}", blobHandler(d))
+
 	api.HandleFunc("/api/v1/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such API route")
 	})
@@ -120,6 +140,8 @@ type ErrorResponse struct {
 type ErrorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Fields maps invalid input fields to a reason (validation errors only).
+	Fields map[string]string `json:"fields,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, msg string) {

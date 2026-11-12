@@ -60,7 +60,12 @@ All configuration comes from environment variables.
 | `AIFS_PASSWORD` | none (`dev` in development) | Shared password. Required in production, at least 12 characters. Changing it logs everyone out. |
 | `AIFS_PASSWORD_FILE` | | Read the password from a file instead (Docker/Compose secrets) |
 | `AIFS_SESSION_TTL` | `720h` | How long a login lasts |
+| `AIFS_MAX_UPLOAD_MB` | `30` | Largest accepted photograph (also limited to 64 megapixels) |
 | `AIFS_COOKIE_SECURE` | `true` | Mark the session cookie `Secure`. Set `false` only when serving over plain HTTP on a non-localhost address |
+
+## Data
+
+Everything lives under `AIFS_DATA_DIR`: the SQLite database (`aifs.db`) and image bytes under `blobs/`. Images are content-addressed by SHA-256. Uploaded originals (`blobs/original/`) are stored exactly as uploaded, as read-only files, and nothing in the application can modify them. Thumbnails are rendered on demand (with EXIF orientation applied) into `blobs/derived/`, which is safe to delete.
 
 ## Security
 

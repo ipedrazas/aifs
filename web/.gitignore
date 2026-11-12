@@ -27,3 +27,6 @@ dist-ssr
 test-results
 playwright-report
 blob-report
+
+# Playwright session state
+e2e/.auth

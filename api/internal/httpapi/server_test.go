@@ -8,13 +8,17 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/ipedrazas/aifs/api/internal/auth"
+	"github.com/ipedrazas/aifs/api/internal/blob"
+	"github.com/ipedrazas/aifs/api/internal/catalog"
 	"github.com/ipedrazas/aifs/api/internal/db"
+	"github.com/ipedrazas/aifs/api/internal/media"
 )
 
 type fakeDB struct {
@@ -33,13 +37,38 @@ var webFS = fstest.MapFS{
 
 const testPassword = "correct horse battery"
 
-func newAuth(t *testing.T) *auth.Service {
+func newServerT(t *testing.T, fdb fakeDB, web fstest.MapFS) http.Handler {
 	t.Helper()
-	d, err := db.Open(context.Background(), t.TempDir())
+	return newTestServer(t, fdb, web, 1<<20)
+}
+
+func newTestServer(t *testing.T, fdb fakeDB, web fstest.MapFS, maxUpload int64) http.Handler {
+	t.Helper()
+	dir := t.TempDir()
+	d, err := db.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.Close() })
+	store, err := blob.NewFS(filepath.Join(dir, "blobs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return New(Deps{
+		Logger:         log,
+		DB:             fdb,
+		Web:            web,
+		Auth:           newAuth(t, d),
+		CookieSecure:   true,
+		Catalog:        catalog.New(d, store, log),
+		Media:          media.New(d, store),
+		MaxUploadBytes: maxUpload,
+	})
+}
+
+func newAuth(t *testing.T, d *db.DB) *auth.Service {
+	t.Helper()
 	a, err := auth.New(context.Background(), d, auth.Options{
 		Password: testPassword,
 		TTL:      time.Hour,
@@ -51,17 +80,6 @@ func newAuth(t *testing.T) *auth.Service {
 		t.Fatal(err)
 	}
 	return a
-}
-
-func newServerT(t *testing.T, fdb fakeDB, web fstest.MapFS) http.Handler {
-	t.Helper()
-	return New(Deps{
-		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		DB:           fdb,
-		Web:          web,
-		Auth:         newAuth(t),
-		CookieSecure: true,
-	})
 }
 
 func do(t *testing.T, h http.Handler, method, target string, cookies ...*http.Cookie) *httptest.ResponseRecorder {

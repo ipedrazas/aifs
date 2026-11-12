@@ -114,6 +114,227 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/products:
+    get:
+      operationId: listProducts
+      summary: List products, newest first
+      tags: [products]
+      responses:
+        "200":
+          description: Products with their cover photograph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      operationId: createProduct
+      summary: Create a product
+      tags: [products]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/products/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    get:
+      operationId: getProduct
+      summary: A product with all its reference photographs
+      tags: [products]
+      responses:
+        "200":
+          description: The product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: updateProduct
+      summary: Change product fields
+      description: Fields that are absent are left unchanged. An empty `sku` clears it.
+      tags: [products]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "200":
+          description: The updated product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteProduct
+      summary: Delete a product and its photographs
+      tags: [products]
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/products/{id}/images:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    post:
+      operationId: uploadProductImage
+      summary: Upload one reference photograph
+      description: |
+        JPEG, PNG or WebP, up to `AIFS_MAX_UPLOAD_MB` (default 30 MB) and 64
+        megapixels. The type is detected from the bytes and the image is fully
+        decoded to reject damaged files. The bytes are stored exactly as
+        uploaded and can never be modified, only deleted.
+      tags: [products]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [view, file]
+              properties:
+                view:
+                  $ref: "#/components/schemas/View"
+                file:
+                  type: string
+                  format: binary
+            encoding:
+              file:
+                contentType: image/jpeg, image/png, image/webp
+      responses:
+        "201":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductImage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: The same photograph is already attached (`conflict`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: File too large (`too_large`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Not an accepted or readable image (`invalid_image`), or invalid view (`invalid`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/products/{id}/images/{imageId}:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    delete:
+      operationId: deleteProductImage
+      summary: Delete a reference photograph record
+      description: The stored bytes are removed when no other record uses them.
+      tags: [products]
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/blobs/{hash}:
+    get:
+      operationId: getBlob
+      summary: Image bytes by content hash
+      description: |
+        Without `w`, the stored bytes exactly as uploaded. With `w`, an upright
+        (EXIF orientation applied) JPEG at most `w` pixels wide; `w` rounds up
+        to 256, 512, 1024 or 2048.
+      tags: [blobs]
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+        - name: w
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: The image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: Not modified (ETag match)
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     session:
@@ -123,6 +344,14 @@ components:
       description: |
         Set by `POST /api/v1/session`. Named `aifs_session` when the server runs
         with `AIFS_COOKIE_SECURE=false`.
+  parameters:
+    ProductId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
   responses:
     Unauthenticated:
       description: No valid session (`unauthenticated`)
@@ -143,6 +372,115 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    View:
+      type: string
+      enum: [front, back, side, detail, print]
+    ProductInput:
+      type: object
+      additionalProperties: false
+      description: All fields optional on update; `name` is required on create.
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        sku:
+          type: string
+          maxLength: 64
+          description: Product identifier, unique (case-insensitive) when set.
+        category:
+          type: string
+          maxLength: 100
+          description: Defaults to `jeans`.
+        description:
+          type: string
+          maxLength: 5000
+        colour:
+          type: string
+          maxLength: 5000
+        printDetails:
+          type: string
+          maxLength: 5000
+        notes:
+          type: string
+          maxLength: 5000
+    Product:
+      type: object
+      required: [id, name, sku, category, description, colour, printDetails, notes, createdAt, updatedAt, imageCount, cover]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        sku:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+        colour:
+          type: string
+        printDetails:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        imageCount:
+          type: integer
+        cover:
+          description: First front photograph, else the first photograph.
+          oneOf:
+            - $ref: "#/components/schemas/ProductImage"
+            - type: "null"
+        images:
+          description: Present on single-product responses, ordered front, back, side, detail, print.
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductImage"
+    ProductList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+    ProductImage:
+      type: object
+      required: [id, productId, hash, view, filename, contentType, size, width, height, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        productId:
+          type: integer
+          format: int64
+        hash:
+          type: string
+          description: SHA-256 of the stored bytes; fetch them from `/api/v1/blobs/{hash}`.
+        view:
+          $ref: "#/components/schemas/View"
+        filename:
+          type: string
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        size:
+          type: integer
+          format: int64
+        width:
+          type: integer
+          description: Displayed width, after EXIF orientation.
+        height:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
     LoginRequest:
       type: object
       required: [password]
@@ -193,3 +531,8 @@ components:
             message:
               type: string
               description: Human-readable message.
+            fields:
+              type: object
+              description: Invalid input fields and why (code `invalid`).
+              additionalProperties:
+                type: string

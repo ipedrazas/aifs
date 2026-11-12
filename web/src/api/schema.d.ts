@@ -64,10 +64,178 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List products, newest first */
+        get: operations["listProducts"];
+        put?: never;
+        /** Create a product */
+        post: operations["createProduct"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        /** A product with all its reference photographs */
+        get: operations["getProduct"];
+        put?: never;
+        post?: never;
+        /** Delete a product and its photographs */
+        delete: operations["deleteProduct"];
+        options?: never;
+        head?: never;
+        /**
+         * Change product fields
+         * @description Fields that are absent are left unchanged. An empty `sku` clears it.
+         */
+        patch: operations["updateProduct"];
+        trace?: never;
+    };
+    "/api/v1/products/{id}/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload one reference photograph
+         * @description JPEG, PNG or WebP, up to `AIFS_MAX_UPLOAD_MB` (default 30 MB) and 64
+         *     megapixels. The type is detected from the bytes and the image is fully
+         *     decoded to reject damaged files. The bytes are stored exactly as
+         *     uploaded and can never be modified, only deleted.
+         */
+        post: operations["uploadProductImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{id}/images/{imageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+                imageId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a reference photograph record
+         * @description The stored bytes are removed when no other record uses them.
+         */
+        delete: operations["deleteProductImage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blobs/{hash}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Image bytes by content hash
+         * @description Without `w`, the stored bytes exactly as uploaded. With `w`, an upright
+         *     (EXIF orientation applied) JPEG at most `w` pixels wide; `w` rounds up
+         *     to 256, 512, 1024 or 2048.
+         */
+        get: operations["getBlob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        View: "front" | "back" | "side" | "detail" | "print";
+        /** @description All fields optional on update; `name` is required on create. */
+        ProductInput: {
+            name?: string;
+            /** @description Product identifier, unique (case-insensitive) when set. */
+            sku?: string;
+            /** @description Defaults to `jeans`. */
+            category?: string;
+            description?: string;
+            colour?: string;
+            printDetails?: string;
+            notes?: string;
+        };
+        Product: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            sku: string;
+            category: string;
+            description: string;
+            colour: string;
+            printDetails: string;
+            notes: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            imageCount: number;
+            /** @description First front photograph, else the first photograph. */
+            cover: components["schemas"]["ProductImage"] | null;
+            /** @description Present on single-product responses, ordered front, back, side, detail, print. */
+            images?: components["schemas"]["ProductImage"][];
+        };
+        ProductList: {
+            items: components["schemas"]["Product"][];
+        };
+        ProductImage: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            productId: number;
+            /** @description SHA-256 of the stored bytes; fetch them from `/api/v1/blobs/{hash}`. */
+            hash: string;
+            view: components["schemas"]["View"];
+            filename: string;
+            /** @enum {string} */
+            contentType: "image/jpeg" | "image/png" | "image/webp";
+            /** Format: int64 */
+            size: number;
+            /** @description Displayed width, after EXIF orientation. */
+            width: number;
+            height: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
         LoginRequest: {
             password: string;
         };
@@ -94,6 +262,10 @@ export interface components {
                 code: string;
                 /** @description Human-readable message. */
                 message: string;
+                /** @description Invalid input fields and why (code `invalid`). */
+                fields?: {
+                    [key: string]: string;
+                };
             };
         };
     };
@@ -126,7 +298,9 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        ProductId: number;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -269,6 +443,251 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             default: components["responses"]["Error"];
+        };
+    };
+    listProducts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Products with their cover photograph */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    createProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The product */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    updateProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductInput"];
+            };
+        };
+        responses: {
+            /** @description The updated product */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    uploadProductImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    view: components["schemas"]["View"];
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Stored */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductImage"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            /** @description The same photograph is already attached (`conflict`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description File too large (`too_large`) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not an accepted or readable image (`invalid_image`), or invalid view (`invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteProductImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+                imageId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getBlob: {
+        parameters: {
+            query?: {
+                w?: number;
+            };
+            header?: never;
+            path: {
+                hash: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description Not modified (ETag match) */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
         };
     };
 }

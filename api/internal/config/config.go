@@ -37,6 +37,8 @@ type Config struct {
 	// CookieSecure sets the Secure flag on the session cookie. Disable only
 	// when serving over plain HTTP on a non-localhost address.
 	CookieSecure bool
+	// MaxUploadBytes bounds a single uploaded photograph.
+	MaxUploadBytes int64
 }
 
 // DevPassword is used in development mode when no password is configured.
@@ -88,6 +90,12 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("AIFS_COOKIE_SECURE: %w", err)
 	}
+
+	mb, err := strconv.Atoi(valueOr(getenv("AIFS_MAX_UPLOAD_MB"), "30"))
+	if err != nil || mb < 1 || mb > 200 {
+		return Config{}, fmt.Errorf("AIFS_MAX_UPLOAD_MB must be between 1 and 200, got %q", getenv("AIFS_MAX_UPLOAD_MB"))
+	}
+	c.MaxUploadBytes = int64(mb) << 20
 
 	return c, nil
 }
