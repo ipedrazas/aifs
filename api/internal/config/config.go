@@ -2,10 +2,13 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Environment names.
@@ -25,7 +28,19 @@ type Config struct {
 	Env string
 	// LogLevel is the minimum slog level.
 	LogLevel slog.Level
+
+	// Password is the shared password protecting the app. Required outside
+	// development mode (see Validate).
+	Password string
+	// SessionTTL is how long a login lasts.
+	SessionTTL time.Duration
+	// CookieSecure sets the Secure flag on the session cookie. Disable only
+	// when serving over plain HTTP on a non-localhost address.
+	CookieSecure bool
 }
+
+// DevPassword is used in development mode when no password is configured.
+const DevPassword = "dev"
 
 // Dev reports whether the server runs in development mode.
 func (c Config) Dev() bool { return c.Env == EnvDevelopment }
@@ -48,7 +63,51 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("AIFS_LOG_LEVEL: %w", err)
 	}
 
+	c.Password = getenv("AIFS_PASSWORD")
+	if file := getenv("AIFS_PASSWORD_FILE"); file != "" {
+		if c.Password != "" {
+			return Config{}, errors.New("set AIFS_PASSWORD or AIFS_PASSWORD_FILE, not both")
+		}
+		b, err := os.ReadFile(file) //nolint:gosec // path comes from the operator
+		if err != nil {
+			return Config{}, fmt.Errorf("AIFS_PASSWORD_FILE: %w", err)
+		}
+		c.Password = strings.TrimRight(string(b), "\r\n")
+	}
+	if c.Password == "" && c.Dev() {
+		c.Password = DevPassword
+	}
+
+	ttl, err := time.ParseDuration(valueOr(getenv("AIFS_SESSION_TTL"), "720h"))
+	if err != nil || ttl < time.Minute {
+		return Config{}, fmt.Errorf("AIFS_SESSION_TTL must be a duration of at least 1m, got %q", getenv("AIFS_SESSION_TTL"))
+	}
+	c.SessionTTL = ttl
+
+	c.CookieSecure, err = strconv.ParseBool(valueOr(getenv("AIFS_COOKIE_SECURE"), "true"))
+	if err != nil {
+		return Config{}, fmt.Errorf("AIFS_COOKIE_SECURE: %w", err)
+	}
+
 	return c, nil
+}
+
+// MinPasswordLength is enforced in production.
+const MinPasswordLength = 12
+
+// Validate checks settings that only the server (not helper commands such as
+// healthcheck) needs.
+func (c Config) Validate() error {
+	if c.Dev() {
+		return nil
+	}
+	if c.Password == "" {
+		return errors.New("AIFS_PASSWORD (or AIFS_PASSWORD_FILE) is required outside development mode")
+	}
+	if len(c.Password) < MinPasswordLength {
+		return fmt.Errorf("AIFS_PASSWORD must be at least %d characters", MinPasswordLength)
+	}
+	return nil
 }
 
 // FromEnv loads configuration from the process environment.

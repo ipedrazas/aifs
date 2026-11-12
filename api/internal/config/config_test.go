@@ -2,7 +2,10 @@ package config
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func env(m map[string]string) func(string) string {
@@ -19,6 +22,42 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.Dev() {
 		t.Fatal("default must not be development mode")
+	}
+	if c.SessionTTL != 720*time.Hour || !c.CookieSecure || c.Password != "" {
+		t.Fatalf("unexpected auth defaults: %+v", c)
+	}
+}
+
+func TestValidatePassword(t *testing.T) {
+	prod, _ := Load(env(nil))
+	if err := prod.Validate(); err == nil {
+		t.Fatal("production without a password must not validate")
+	}
+	short, _ := Load(env(map[string]string{"AIFS_PASSWORD": "short"}))
+	if err := short.Validate(); err == nil {
+		t.Fatal("short password must not validate")
+	}
+	ok, _ := Load(env(map[string]string{"AIFS_PASSWORD": "correct horse battery"}))
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	dev, _ := Load(env(map[string]string{"AIFS_ENV": "development"}))
+	if err := dev.Validate(); err != nil || dev.Password != DevPassword {
+		t.Fatalf("development should default the password: %v %q", err, dev.Password)
+	}
+}
+
+func TestPasswordFile(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "pw")
+	if err := os.WriteFile(f, []byte("from a secret file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(env(map[string]string{"AIFS_PASSWORD_FILE": f}))
+	if err != nil || c.Password != "from a secret file" {
+		t.Fatalf("got %q, %v", c.Password, err)
+	}
+	if _, err := Load(env(map[string]string{"AIFS_PASSWORD_FILE": f, "AIFS_PASSWORD": "x"})); err == nil {
+		t.Fatal("both set must be an error")
 	}
 }
 
@@ -39,8 +78,10 @@ func TestLoadOverrides(t *testing.T) {
 
 func TestLoadRejectsInvalid(t *testing.T) {
 	for name, m := range map[string]map[string]string{
-		"env":   {"AIFS_ENV": "staging"},
-		"level": {"AIFS_LOG_LEVEL": "loud"},
+		"env":    {"AIFS_ENV": "staging"},
+		"level":  {"AIFS_LOG_LEVEL": "loud"},
+		"ttl":    {"AIFS_SESSION_TTL": "5s"},
+		"secure": {"AIFS_COOKIE_SECURE": "maybe"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Load(env(m)); err == nil {

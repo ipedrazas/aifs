@@ -26,7 +26,7 @@ task setup      # npm ci + Playwright Chromium (needed for `task e2e`)
 task dev        # API on :8080 with live reload + Vite on http://localhost:5173
 ```
 
-Vite proxies `/api` and `/healthz` to the Go server. Development data goes to `./tmp/data`.
+Vite proxies `/api` and `/healthz` to the Go server. Development data goes to `./tmp/data`. In development mode the password is `dev` unless `AIFS_PASSWORD` is set.
 
 After changing `openapi.yaml`, run `task generate` and commit the regenerated types; CI fails on drift.
 
@@ -40,6 +40,7 @@ task --list     # individual tasks
 ## Running with Docker
 
 ```sh
+echo 'AIFS_PASSWORD=choose-a-long-password' > .env
 task docker:up    # build and start on http://localhost:8080 (AIFS_PORT to change)
 task docker:down  # stop; the data volume is kept
 ```
@@ -56,5 +57,13 @@ All configuration comes from environment variables.
 | `AIFS_DATA_DIR` | `./data` (`/data` in the image) | SQLite database and image storage |
 | `AIFS_ENV` | `production` | `production` or `development` |
 | `AIFS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `AIFS_PASSWORD` | none (`dev` in development) | Shared password. Required in production, at least 12 characters. Changing it logs everyone out. |
+| `AIFS_PASSWORD_FILE` | | Read the password from a file instead (Docker/Compose secrets) |
+| `AIFS_SESSION_TTL` | `720h` | How long a login lasts |
+| `AIFS_COOKIE_SECURE` | `true` | Mark the session cookie `Secure`. Set `false` only when serving over plain HTTP on a non-localhost address |
+
+## Security
+
+Everything under `/api/v1` except `POST /api/v1/session` requires a session. Sessions are random tokens kept server-side (only their SHA-256 is stored), sent as an `HttpOnly`, `SameSite=Strict` cookie. Login attempts are rate limited per client IP and in total. State-changing requests from another origin are rejected. Run it behind an HTTPS reverse proxy when it is reachable from other machines; behind a proxy all clients share one rate-limit bucket.
 
 The container runs as a non-root user on a distroless base, stores everything under the `/data` volume, and reports health through `aifs healthcheck` (`GET /healthz`).

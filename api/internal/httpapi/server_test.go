@@ -11,6 +11,10 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
+
+	"github.com/ipedrazas/aifs/api/internal/auth"
+	"github.com/ipedrazas/aifs/api/internal/db"
 )
 
 type fakeDB struct {
@@ -27,35 +31,91 @@ var webFS = fstest.MapFS{
 	"favicon.svg":       {Data: []byte(`<svg/>`)},
 }
 
-func newServer(db fakeDB, web fstest.MapFS) http.Handler {
+const testPassword = "correct horse battery"
+
+func newAuth(t *testing.T) *auth.Service {
+	t.Helper()
+	d, err := db.Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	a, err := auth.New(context.Background(), d, auth.Options{
+		Password: testPassword,
+		TTL:      time.Hour,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+
+		FingerprintIterations: 1000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func newServerT(t *testing.T, fdb fakeDB, web fstest.MapFS) http.Handler {
+	t.Helper()
 	return New(Deps{
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		DB:     db,
-		Web:    web,
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:           fdb,
+		Web:          web,
+		Auth:         newAuth(t),
+		CookieSecure: true,
 	})
 }
 
-func do(t *testing.T, h http.Handler, method, target string) *httptest.ResponseRecorder {
+func do(t *testing.T, h http.Handler, method, target string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
+	return doBody(t, h, method, target, "", cookies...)
+}
+
+func doBody(t *testing.T, h http.Handler, method, target, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+	t.Helper()
+	var r io.Reader
+	if body != "" {
+		r = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, target, r)
+	req.RemoteAddr = "192.0.2.1:1234"
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(method, target, nil))
+	h.ServeHTTP(rec, req)
 	return rec
 }
 
+// login returns the session cookie for a successful login.
+func login(t *testing.T, h http.Handler) *http.Cookie {
+	t.Helper()
+	rec := doBody(t, h, http.MethodPost, "/api/v1/session", `{"password":"`+testPassword+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", rec.Code, rec.Body)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "__Host-aifs_session" {
+			return c
+		}
+	}
+	t.Fatal("no session cookie set")
+	return nil
+}
+
 func TestHealthz(t *testing.T) {
-	rec := do(t, newServer(fakeDB{}, webFS), http.MethodGet, "/healthz")
+	rec := do(t, newServerT(t, fakeDB{}, webFS), http.MethodGet, "/healthz")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ok"`) {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)
 	}
 
-	rec = do(t, newServer(fakeDB{pingErr: errors.New("down")}, webFS), http.MethodGet, "/healthz")
+	rec = do(t, newServerT(t, fakeDB{pingErr: errors.New("down")}, webFS), http.MethodGet, "/healthz")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("got %d, want 503", rec.Code)
 	}
 }
 
 func TestVersion(t *testing.T) {
-	rec := do(t, newServer(fakeDB{schema: 3}, webFS), http.MethodGet, "/api/v1/version")
+	h := newServerT(t, fakeDB{schema: 3}, webFS)
+	rec := do(t, h, http.MethodGet, "/api/v1/version", login(t, h))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("got %d", rec.Code)
 	}
@@ -72,9 +132,10 @@ func TestVersion(t *testing.T) {
 }
 
 func TestUnknownAPIRouteIsJSON404(t *testing.T) {
-	h := newServer(fakeDB{}, webFS)
+	h := newServerT(t, fakeDB{}, webFS)
+	cookie := login(t, h)
 	for _, p := range []string{"/api/v1/nope", "/api/other"} {
-		rec := do(t, h, http.MethodGet, p)
+		rec := do(t, h, http.MethodGet, p, cookie)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("%s: got %d", p, rec.Code)
 		}
@@ -85,7 +146,7 @@ func TestUnknownAPIRouteIsJSON404(t *testing.T) {
 }
 
 func TestSPA(t *testing.T) {
-	h := newServer(fakeDB{}, webFS)
+	h := newServerT(t, fakeDB{}, webFS)
 
 	cases := []struct {
 		path   string
@@ -119,17 +180,33 @@ func TestSPA(t *testing.T) {
 }
 
 func TestSPANotBuilt(t *testing.T) {
-	rec := do(t, newServer(fakeDB{}, fstest.MapFS{}), http.MethodGet, "/")
+	rec := do(t, newServerT(t, fakeDB{}, fstest.MapFS{}), http.MethodGet, "/")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "not built") {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)
 	}
 }
 
 func TestSecurityHeaders(t *testing.T) {
-	rec := do(t, newServer(fakeDB{}, webFS), http.MethodGet, "/")
+	rec := do(t, newServerT(t, fakeDB{}, webFS), http.MethodGet, "/")
 	for _, h := range []string{"X-Content-Type-Options", "X-Frame-Options", "Content-Security-Policy"} {
 		if rec.Header().Get(h) == "" {
 			t.Errorf("missing %s", h)
 		}
 	}
+}
+
+func newReq(method, target, body string) *http.Request {
+	var r io.Reader
+	if body != "" {
+		r = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, target, r)
+	req.RemoteAddr = "192.0.2.1:1234"
+	return req
+}
+
+func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
 }

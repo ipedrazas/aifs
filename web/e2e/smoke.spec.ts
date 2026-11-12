@@ -1,35 +1,71 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
-test('health check reports ok', async ({ request }) => {
+const password = process.env.E2E_PASSWORD ?? 'e2e-password-123'
+
+async function logIn(page: Page) {
+  await page.goto('/')
+  await page.getByLabel('Password').fill(password)
+  await page.getByRole('button', { name: 'Log in' }).click()
+  await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+}
+
+test('health check is public and reports ok', async ({ request }) => {
   const res = await request.get('/healthz')
   expect(res.status()).toBe(200)
   expect(await res.json()).toEqual({ status: 'ok' })
 })
 
-test('version endpoint returns JSON', async ({ request }) => {
-  const res = await request.get('/api/v1/version')
-  expect(res.status()).toBe(200)
-  const body = await res.json()
-  expect(body.version).toBeTruthy()
-  expect(body.schemaVersion).toBeGreaterThanOrEqual(1)
+test('the API refuses requests without a session', async ({ request }) => {
+  for (const path of ['/api/v1/version', '/api/v1/session', '/api/v1/blobs/abc', '/api/v1/nope']) {
+    const res = await request.get(path)
+    expect(res.status(), path).toBe(401)
+    expect((await res.json()).error.code, path).toBe('unauthenticated')
+  }
 })
 
-test('the app shell shows the server version', async ({ page }) => {
-  const expected = process.env.E2E_EXPECT_VERSION
+test('a wrong password is rejected', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('link', { name: 'AI Fashion Studio' })).toBeVisible()
+  await page.getByLabel('Password').fill('not the password')
+  await page.getByRole('button', { name: 'Log in' }).click()
+  await expect(page.getByRole('alert')).toHaveText('Incorrect password.')
+})
+
+test('cross-origin logins are rejected', async ({ request }) => {
+  const res = await request.post('/api/v1/session', {
+    data: { password },
+    headers: { Origin: 'https://evil.example', 'Sec-Fetch-Site': 'cross-site' },
+  })
+  expect(res.status()).toBe(403)
+})
+
+test('log in, see the server version, survive a reload, log out', async ({ page }) => {
+  await logIn(page)
+
   const version = page.getByTestId('server-version')
   await expect(version).toBeVisible()
+  const expected = process.env.E2E_EXPECT_VERSION
   if (expected) await expect(version).toContainText(`Server ${expected}`)
+
+  const cookies = await page.context().cookies()
+  const session = cookies.find((c) => c.name.endsWith('aifs_session'))
+  expect(session?.httpOnly).toBe(true)
+  expect(session?.sameSite).toBe('Strict')
+
+  await page.reload()
+  await expect(page.getByTestId('server-version')).toBeVisible()
+
+  // The browser session can call the API.
+  const res = await page.request.get('/api/v1/version')
+  expect(res.status()).toBe(200)
+
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await expect(page.getByLabel('Password')).toBeVisible()
+  await page.reload()
+  await expect(page.getByLabel('Password')).toBeVisible()
 })
 
 test('client-side routes survive a reload', async ({ page }) => {
+  await logIn(page)
   await page.goto('/does/not/exist')
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
-})
-
-test('unknown API routes return a JSON 404', async ({ request }) => {
-  const res = await request.get('/api/v1/nope')
-  expect(res.status()).toBe(404)
-  expect((await res.json()).error.code).toBe('not_found')
 })

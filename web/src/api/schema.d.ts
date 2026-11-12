@@ -24,6 +24,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current session */
+        get: operations["getSession"];
+        put?: never;
+        /**
+         * Log in with the shared password
+         * @description Sets the session cookie. Attempts are rate limited per client and in
+         *     total; a limited request gets 429 with `Retry-After`.
+         */
+        post: operations["login"];
+        /** Log out */
+        delete: operations["logout"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/version": {
         parameters: {
             query?: never;
@@ -45,6 +68,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        LoginRequest: {
+            password: string;
+        };
+        Session: {
+            /** @constant */
+            authenticated: true;
+            /** Format: date-time */
+            expiresAt: string;
+        };
         Health: {
             /** @enum {string} */
             status: "ok" | "unavailable";
@@ -66,6 +98,24 @@ export interface components {
         };
     };
     responses: {
+        /** @description No valid session (`unauthenticated`) */
+        Unauthenticated: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Cross-origin state-changing request rejected (`cross_origin`) */
+        CrossOrigin: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Error */
         Error: {
             headers: {
@@ -112,6 +162,93 @@ export interface operations {
             };
         };
     };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Logged in */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Logged in; the session cookie is set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            400: components["responses"]["Error"];
+            /** @description Incorrect password (`invalid_password`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            403: components["responses"]["CrossOrigin"];
+            /** @description Too many attempts (`rate_limited`) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Logged out; the session cookie is cleared */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["CrossOrigin"];
+        };
+    };
     getVersion: {
         parameters: {
             query?: never;
@@ -130,6 +267,7 @@ export interface operations {
                     "application/json": components["schemas"]["Version"];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
             default: components["responses"]["Error"];
         };
     };

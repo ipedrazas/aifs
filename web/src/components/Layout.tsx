@@ -1,5 +1,6 @@
 import { Link, Outlet } from 'react-router'
 import { useVersion } from '../api/queries'
+import { useLogout } from '../api/session'
 
 export function Layout() {
   return (
@@ -9,6 +10,7 @@ export function Layout() {
           <Link to="/" className="font-semibold tracking-tight">
             AI Fashion Studio
           </Link>
+          <LogoutButton />
         </div>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
@@ -29,5 +31,19 @@ export function ServerVersion() {
     <span data-testid="server-version">
       Server {data.version} · schema v{data.schemaVersion}
     </span>
+  )
+}
+
+function LogoutButton() {
+  const logout = useLogout()
+  return (
+    <button
+      type="button"
+      onClick={() => logout.mutate()}
+      disabled={logout.isPending}
+      className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-50"
+    >
+      Log out
+    </button>
   )
 }

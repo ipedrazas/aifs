@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ipedrazas/aifs/api/internal/auth"
 	"github.com/ipedrazas/aifs/api/internal/config"
 	"github.com/ipedrazas/aifs/api/internal/db"
 	"github.com/ipedrazas/aifs/api/internal/httpapi"
@@ -54,6 +55,9 @@ func serve() error {
 	if err != nil {
 		return err
 	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 
 	var handler slog.Handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})
 	if cfg.Dev() {
@@ -81,12 +85,30 @@ func serve() error {
 		"schema_version", schema,
 	)
 
+	if cfg.Dev() && cfg.Password == config.DevPassword {
+		log.Warn("development mode: using the default password", "password", config.DevPassword)
+	}
+	if !cfg.CookieSecure {
+		log.Warn("session cookie is not marked Secure (AIFS_COOKIE_SECURE=false); serve over HTTPS where possible")
+	}
+
+	authn, err := auth.New(ctx, database, auth.Options{
+		Password: cfg.Password,
+		TTL:      cfg.SessionTTL,
+		Logger:   log,
+	})
+	if err != nil {
+		return fmt.Errorf("auth: %w", err)
+	}
+
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: httpapi.New(httpapi.Deps{
-			Logger: log,
-			DB:     database,
-			Web:    webui.FS(),
+			Logger:       log,
+			DB:           database,
+			Web:          webui.FS(),
+			Auth:         authn,
+			CookieSecure: cfg.CookieSecure,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       2 * time.Minute, // uploads arrive in later phases
