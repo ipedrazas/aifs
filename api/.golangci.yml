@@ -15,6 +15,8 @@ linters:
   settings:
     misspell:
       locale: UK
+      # Go standard library identifiers (image/color) use US spelling.
+      ignore-rules: [color]
     revive:
       rules:
         - name: exported

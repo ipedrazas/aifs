@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
+export const authState = 'e2e/.auth/state.json'
+
 // Runs against an already running server (the Docker image in CI, see
 // `task e2e`). Set E2E_BASE_URL to point elsewhere.
 export default defineConfig({
@@ -11,5 +13,13 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8080',
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    // Log in once and share the session: logins are rate limited.
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'], storageState: authState },
+      dependencies: ['setup'],
+    },
+  ],
 })

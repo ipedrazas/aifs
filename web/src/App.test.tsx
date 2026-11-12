@@ -5,6 +5,7 @@ import App from './App'
 import { loggedIn, loggedOut, mockApi } from './test/fetch'
 
 const version = { status: 200, body: { version: 'v9', commit: 'c', schemaVersion: 2 } }
+const noProducts = { status: 200, body: { items: [] } }
 
 describe('authentication', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -13,7 +14,7 @@ describe('authentication', () => {
     mockApi({ 'GET /api/v1/session': loggedOut })
     render(<App />)
     expect(await screen.findByLabelText('Password')).toBeInTheDocument()
-    expect(screen.queryByText('Welcome')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Products' })).not.toBeInTheDocument()
   })
 
   it('logs in with the correct password and shows the app', async () => {
@@ -26,6 +27,7 @@ describe('authentication', () => {
           : { status: 401, body: { error: { code: 'invalid_password', message: 'incorrect password' } } }
       },
       'GET /api/v1/version': version,
+      'GET /api/v1/products': noProducts,
     })
     const user = userEvent.setup()
     render(<App />)
@@ -36,7 +38,7 @@ describe('authentication', () => {
 
     await user.type(screen.getByLabelText('Password'), 'right')
     await user.click(screen.getByRole('button', { name: 'Log in' }))
-    expect(await screen.findByText('Welcome')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Products' })).toBeInTheDocument()
     expect(await screen.findByTestId('server-version')).toHaveTextContent('Server v9')
     expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(3)
   })
@@ -61,6 +63,7 @@ describe('authentication', () => {
     mockApi({
       'GET /api/v1/session': loggedIn,
       'GET /api/v1/version': version,
+      'GET /api/v1/products': noProducts,
       'DELETE /api/v1/session': { status: 204 },
     })
     const user = userEvent.setup()
@@ -70,7 +73,7 @@ describe('authentication', () => {
   })
 
   it('returns to login when the session expires mid-use', async () => {
-    mockApi({ 'GET /api/v1/session': loggedIn, 'GET /api/v1/version': loggedOut })
+    mockApi({ 'GET /api/v1/session': loggedIn, 'GET /api/v1/version': loggedOut, 'GET /api/v1/products': loggedOut })
     render(<App />)
     await waitFor(() => expect(screen.getByLabelText('Password')).toBeInTheDocument())
   })

@@ -23,7 +23,7 @@ func TestLoadDefaults(t *testing.T) {
 	if c.Dev() {
 		t.Fatal("default must not be development mode")
 	}
-	if c.SessionTTL != 720*time.Hour || !c.CookieSecure || c.Password != "" {
+	if c.SessionTTL != 720*time.Hour || !c.CookieSecure || c.Password != "" || c.MaxUploadBytes != 30<<20 {
 		t.Fatalf("unexpected auth defaults: %+v", c)
 	}
 }
@@ -82,6 +82,7 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		"level":  {"AIFS_LOG_LEVEL": "loud"},
 		"ttl":    {"AIFS_SESSION_TTL": "5s"},
 		"secure": {"AIFS_COOKIE_SECURE": "maybe"},
+		"upload": {"AIFS_MAX_UPLOAD_MB": "0"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Load(env(m)); err == nil {

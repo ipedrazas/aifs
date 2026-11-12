@@ -18,6 +18,10 @@ vars:
   E2E_PORT: '{{.E2E_PORT | default "18080"}}'
   E2E_NAME: aifs-e2e
   E2E_PASSWORD: e2e-password-123
+  E2E_ENV: >-
+    E2E_BASE_URL=http://127.0.0.1:{{.E2E_PORT}}
+    E2E_EXPECT_VERSION={{.VERSION}}
+    E2E_PASSWORD={{.E2E_PASSWORD}}
 
 tasks:
   default:
@@ -167,7 +171,11 @@ tasks:
       - docker run -d --name {{.E2E_NAME}} -p 127.0.0.1:{{.E2E_PORT}}:8080 -v {{.E2E_NAME}}-data:/data -e AIFS_PASSWORD={{.E2E_PASSWORD}} {{.IMAGE}}
       - ./scripts/wait-healthy.sh {{.E2E_NAME}} 60
       - ./scripts/check-image.sh {{.E2E_NAME}} {{.IMAGE}}
-      - cd web && E2E_BASE_URL=http://127.0.0.1:{{.E2E_PORT}} E2E_EXPECT_VERSION={{.VERSION}} E2E_PASSWORD={{.E2E_PASSWORD}} npx playwright test
+      - cd web && {{.E2E_ENV}} npx playwright test --grep-invert @after-restart
+      # Data written before a restart must still be there after it.
+      - docker restart {{.E2E_NAME}} >/dev/null
+      - ./scripts/wait-healthy.sh {{.E2E_NAME}} 60
+      - cd web && {{.E2E_ENV}} npx playwright test --grep @after-restart
 
   e2e:noop:
     internal: true
