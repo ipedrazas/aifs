@@ -276,6 +276,9 @@ func (s *Service) DeleteProduct(ctx context.Context, id int64) error {
 		return err
 	}
 	res, err := s.db.Write.ExecContext(ctx, `DELETE FROM product WHERE id = ?`, id)
+	if isReferenced(err) {
+		return &ConflictError{Reason: "this product is used by photoshoots or generations and is kept for traceability"}
+	}
 	if err != nil {
 		return err
 	}

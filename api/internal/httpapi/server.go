@@ -13,6 +13,8 @@ import (
 	"github.com/ipedrazas/aifs/api/internal/auth"
 	"github.com/ipedrazas/aifs/api/internal/catalog"
 	"github.com/ipedrazas/aifs/api/internal/media"
+	"github.com/ipedrazas/aifs/api/internal/provider"
+	"github.com/ipedrazas/aifs/api/internal/studio"
 	"github.com/ipedrazas/aifs/api/internal/version"
 )
 
@@ -46,6 +48,12 @@ type Deps struct {
 	Media *media.Service
 	// MaxUploadBytes bounds a single uploaded photograph.
 	MaxUploadBytes int64
+	// Studio runs photoshoots and generations.
+	Studio *studio.Service
+	// Providers are the configured AI providers.
+	Providers *provider.Registry
+	// MaxVariations caps the variations in one generation.
+	MaxVariations int
 }
 
 // New returns the root handler.
@@ -79,6 +87,19 @@ func New(d Deps) http.Handler {
 	api.HandleFunc("DELETE /api/v1/models/{id}", models.delete)
 	api.HandleFunc("POST /api/v1/models/{id}/images", models.uploadImage)
 	api.HandleFunc("DELETE /api/v1/models/{id}/images/{imageId}", models.deleteImage)
+
+	st := studioHandlers{d: d}
+	api.HandleFunc("GET /api/v1/photoshoots", st.listPhotoshoots)
+	api.HandleFunc("POST /api/v1/photoshoots", st.createPhotoshoot)
+	api.HandleFunc("GET /api/v1/photoshoots/{id}", st.getPhotoshoot)
+	api.HandleFunc("PATCH /api/v1/photoshoots/{id}", st.updatePhotoshoot)
+	api.HandleFunc("DELETE /api/v1/photoshoots/{id}", st.deletePhotoshoot)
+	api.HandleFunc("POST /api/v1/photoshoots/{id}/generations", st.startGeneration)
+	api.HandleFunc("GET /api/v1/generations/{id}", st.getGeneration)
+	api.HandleFunc("POST /api/v1/generations/{id}/cancel", st.cancelGeneration)
+	api.HandleFunc("GET /api/v1/images", st.listImages)
+	api.HandleFunc("GET /api/v1/images/{id}", st.getImage)
+	api.HandleFunc("GET /api/v1/providers", st.providers)
 
 	api.HandleFunc("GET /api/v1/blobs/{hash}", blobHandler(d))
 

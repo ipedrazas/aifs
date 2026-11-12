@@ -15,6 +15,7 @@ export function Layout() {
               {[
                 ['/products', 'Products'],
                 ['/models', 'Models'],
+                ['/photoshoots', 'Photoshoots'],
               ].map(([to, label]) => (
                 <NavLink
                   key={to}

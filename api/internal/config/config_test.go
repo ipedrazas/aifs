@@ -23,6 +23,9 @@ func TestLoadDefaults(t *testing.T) {
 	if c.Dev() {
 		t.Fatal("default must not be development mode")
 	}
+	if c.MaxVariations != 4 || c.Workers != 4 || c.FakeProvider || c.StepTimeout != 10*time.Minute {
+		t.Fatalf("unexpected generation defaults: %+v", c)
+	}
 	if c.SessionTTL != 720*time.Hour || !c.CookieSecure || c.Password != "" || c.MaxUploadBytes != 30<<20 {
 		t.Fatalf("unexpected auth defaults: %+v", c)
 	}
@@ -71,7 +74,7 @@ func TestLoadOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Addr != "127.0.0.1:9000" || c.DataDir != "/data" || !c.Dev() || c.LogLevel != slog.LevelDebug {
+	if c.Addr != "127.0.0.1:9000" || c.DataDir != "/data" || !c.Dev() || c.LogLevel != slog.LevelDebug || !c.FakeProvider {
 		t.Fatalf("unexpected config: %+v", c)
 	}
 }
@@ -83,6 +86,9 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		"ttl":    {"AIFS_SESSION_TTL": "5s"},
 		"secure": {"AIFS_COOKIE_SECURE": "maybe"},
 		"upload": {"AIFS_MAX_UPLOAD_MB": "0"},
+		"vars":   {"AIFS_MAX_VARIATIONS": "50"},
+		"fake":   {"AIFS_FAKE_PROVIDER": "maybe"},
+		"delay":  {"AIFS_FAKE_DELAY": "soon"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Load(env(m)); err == nil {
