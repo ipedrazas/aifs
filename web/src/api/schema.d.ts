@@ -240,6 +240,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/photoshoots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List photoshoots, most recently used first */
+        get: operations["listPhotoshoots"];
+        put?: never;
+        /** Create a photoshoot (product + model) */
+        post: operations["createPhotoshoot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/photoshoots/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** A photoshoot with its generations, newest first */
+        get: operations["getPhotoshoot"];
+        put?: never;
+        post?: never;
+        /** Delete a photoshoot that has never been generated from */
+        delete: operations["deletePhotoshoot"];
+        options?: never;
+        head?: never;
+        /** Change a photoshoot; past generations keep their snapshot */
+        patch: operations["updatePhotoshoot"];
+        trace?: never;
+    };
+    "/api/v1/photoshoots/{id}/generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue a generation; returns immediately
+         * @description Validates the request, plans every provider call and queues it. Poll
+         *     `GET /api/v1/generations/{id}` for progress.
+         */
+        post: operations["startGeneration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** A generation with its steps and images */
+        get: operations["getGeneration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generations/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a queued or running generation; produced images are kept */
+        post: operations["cancelGeneration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generated images, newest first */
+        get: operations["listImages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/images/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** A generated image with the full snapshot that produced it */
+        get: operations["getImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Configured providers, recipes and limits */
+        get: operations["listProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/blobs/{hash}": {
         parameters: {
             query?: never;
@@ -380,6 +533,229 @@ export interface components {
             height: number;
             /** Format: date-time */
             createdAt: string;
+        };
+        /** @enum {string} */
+        AspectRatio: "3:4" | "4:5" | "2:3" | "1:1" | "9:16" | "4:3" | "16:9";
+        /** @description `productId` and `modelId` are required on create; absent fields are unchanged on update. */
+        PhotoshootInput: {
+            /** @description Defaults to "<product> on <model>". */
+            name?: string;
+            /** Format: int64 */
+            productId?: number;
+            /**
+             * Format: int64
+             * @description Must not be archived.
+             */
+            modelId?: number;
+            aspectRatio?: components["schemas"]["AspectRatio"];
+            customInstructions?: string;
+        };
+        ProductSummary: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            sku: string;
+            coverHash: string;
+        };
+        ModelSummary: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            archived: boolean;
+            coverHash: string;
+        };
+        Photoshoot: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** Format: int64 */
+            productId: number;
+            /** Format: int64 */
+            modelId: number;
+            aspectRatio: components["schemas"]["AspectRatio"];
+            customInstructions: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            product: components["schemas"]["ProductSummary"];
+            model: components["schemas"]["ModelSummary"];
+            generationCount: number;
+            /** @description Newest generated image, or empty. */
+            latestImageHash: string;
+            /** @description Present on single-photoshoot responses, newest first (up to 100). */
+            generations?: components["schemas"]["Generation"][];
+        };
+        PhotoshootList: {
+            items: components["schemas"]["Photoshoot"][];
+        };
+        GenerationRequest: {
+            /** @description A recipe name from `GET /api/v1/providers`. */
+            recipe: string;
+            provider: string;
+            /** @description Capped by `AIFS_MAX_VARIATIONS` (see `maxVariations` in `GET /api/v1/providers`). */
+            variations: number;
+        };
+        /** @enum {string} */
+        GenerationStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+        /** @enum {string} */
+        StepStatus: "pending" | "submitted" | "succeeded" | "failed" | "cancelled";
+        /** @enum {string} */
+        ReviewStatus: "pending" | "approved" | "rejected" | "needs_refinement";
+        GenerationInput: {
+            position: number;
+            /** @enum {string} */
+            role: "garment" | "model";
+            /** @description Product view or model image role. */
+            label: string;
+            hash: string;
+        };
+        /** @description The complete, immutable record of what produced a generation's images. */
+        Snapshot: {
+            recipe: string;
+            provider: string;
+            variations: number;
+            aspectRatio: string;
+            customInstructions: string;
+            photoshoot: {
+                /** Format: int64 */
+                id: number;
+                name: string;
+            };
+            product: {
+                /** Format: int64 */
+                id: number;
+                name: string;
+                sku: string;
+                category: string;
+                colour: string;
+                printDetails: string;
+            };
+            model: {
+                /** Format: int64 */
+                id: number;
+                name: string;
+                appearance: string;
+                preferredPoses: string;
+                styling: string;
+            };
+            steps: {
+                position: number;
+                capability: string;
+                purpose: string;
+                provider: string;
+                providerModel: string;
+                prompt: string;
+                /** @description Positions in `inputs` sent with this step. */
+                inputs: number[];
+                usesPrevious: boolean;
+            }[];
+            inputs: components["schemas"]["GenerationInput"][];
+        };
+        Step: {
+            /** Format: int64 */
+            id: number;
+            variation: number;
+            position: number;
+            capability: string;
+            provider: string;
+            providerModel: string;
+            providerJobId: string;
+            status: components["schemas"]["StepStatus"];
+            attempts: number;
+            error: string;
+            /** Format: int64 */
+            costMicros: number;
+            outputHash: string;
+            startedAt: string | null;
+            finishedAt: string | null;
+        };
+        Generation: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            photoshootId: number;
+            /** Format: int64 */
+            productId: number;
+            /** Format: int64 */
+            modelId: number;
+            recipe: string;
+            provider: string;
+            variations: number;
+            status: components["schemas"]["GenerationStatus"];
+            /** @description Readable reason for a failed generation. */
+            error: string;
+            /**
+             * Format: int64
+             * @description Total cost in millionths of a US dollar.
+             */
+            costMicros: number;
+            cancelRequested: boolean;
+            prompt: string;
+            /** Format: date-time */
+            createdAt: string;
+            startedAt: string | null;
+            finishedAt: string | null;
+            stepsTotal: number;
+            stepsDone: number;
+            settings: components["schemas"]["Snapshot"];
+            images: components["schemas"]["GeneratedImage"][];
+            /** @description Present on single-generation responses. */
+            steps?: components["schemas"]["Step"][];
+        };
+        GeneratedImage: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            generationId: number;
+            variation: number;
+            hash: string;
+            width: number;
+            height: number;
+            reviewStatus: components["schemas"]["ReviewStatus"];
+            /** Format: date-time */
+            createdAt: string;
+            recipe: string;
+            provider: string;
+            /** Format: int64 */
+            photoshootId: number;
+            product: components["schemas"]["ProductSummary"];
+            model: components["schemas"]["ModelSummary"];
+        };
+        ImageList: {
+            items: components["schemas"]["GeneratedImage"][];
+        };
+        ImageDetail: components["schemas"]["GeneratedImage"] & {
+            prompt: string;
+            settings: components["schemas"]["Snapshot"];
+            /** @description The provider calls that produced this image. */
+            steps: components["schemas"]["Step"][];
+            /** Format: int64 */
+            costMicros: number;
+        };
+        Providers: {
+            maxVariations: number;
+            providers: {
+                name: string;
+                label: string;
+                capabilities: string[];
+                models: {
+                    [key: string]: string;
+                };
+                /** Format: int64 */
+                unitPriceMicros: number;
+                /** @description Recipes this provider can run on its own. */
+                recipes: string[];
+            }[];
+            recipes: {
+                name: string;
+                label: string;
+                description: string;
+                steps: {
+                    capability: string;
+                    purpose: string;
+                }[];
+            }[];
         };
         LoginRequest: {
             password: string;
@@ -993,6 +1369,291 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["Error"];
+        };
+    };
+    listPhotoshoots: {
+        parameters: {
+            query?: {
+                productId?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Photoshoots */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoshootList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    createPhotoshoot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhotoshootInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photoshoot"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getPhotoshoot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The photoshoot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photoshoot"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePhotoshoot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePhotoshoot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhotoshootInput"];
+            };
+        };
+        responses: {
+            /** @description The updated photoshoot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photoshoot"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    startGeneration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Generation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getGeneration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The generation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Generation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    cancelGeneration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled, or cancellation requested */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Generation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            /** @description Already finished (`conflict`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listImages: {
+        parameters: {
+            query?: {
+                productId?: number;
+                photoshootId?: number;
+                status?: components["schemas"]["ReviewStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Images */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Providers and recipes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Providers"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
         };
     };
     getBlob: {

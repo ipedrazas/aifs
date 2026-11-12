@@ -168,11 +168,16 @@ tasks:
       - task: '{{if eq .SKIP_BUILD "1"}}e2e:noop{{else}}docker:build{{end}}'
       - defer: docker rm -f {{.E2E_NAME}} >/dev/null 2>&1; docker volume rm -f {{.E2E_NAME}}-data >/dev/null 2>&1; true
       - docker rm -f {{.E2E_NAME}} >/dev/null 2>&1 || true
-      - docker run -d --name {{.E2E_NAME}} -p 127.0.0.1:{{.E2E_PORT}}:8080 -v {{.E2E_NAME}}-data:/data -e AIFS_PASSWORD={{.E2E_PASSWORD}} {{.IMAGE}}
+      - >-
+        docker run -d --name {{.E2E_NAME}} -p 127.0.0.1:{{.E2E_PORT}}:8080 -v {{.E2E_NAME}}-data:/data
+        -e AIFS_PASSWORD={{.E2E_PASSWORD}} -e AIFS_FAKE_PROVIDER=true -e AIFS_FAKE_DELAY=1s {{.IMAGE}}
       - ./scripts/wait-healthy.sh {{.E2E_NAME}} 60
       - ./scripts/check-image.sh {{.E2E_NAME}} {{.IMAGE}}
-      - cd web && {{.E2E_ENV}} npx playwright test --grep-invert @after-restart
-      # Data written before a restart must still be there after it.
+      - cd web && {{.E2E_ENV}} npx playwright test --grep-invert "@after-restart|@mid-generation"
+      # Start a slow generation, then restart the server while it runs. Data
+      # written before the restart must survive, and the generation must
+      # finish with neither lost nor duplicated images.
+      - cd web && {{.E2E_ENV}} npx playwright test --grep @mid-generation
       - docker restart {{.E2E_NAME}} >/dev/null
       - ./scripts/wait-healthy.sh {{.E2E_NAME}} 60
       - cd web && {{.E2E_ENV}} npx playwright test --grep @after-restart

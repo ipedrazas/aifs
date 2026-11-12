@@ -460,6 +460,266 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/photoshoots:
+    get:
+      operationId: listPhotoshoots
+      summary: List photoshoots, most recently used first
+      tags: [photoshoots]
+      parameters:
+        - name: productId
+          in: query
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Photoshoots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoshootList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      operationId: createPhotoshoot
+      summary: Create a photoshoot (product + model)
+      tags: [photoshoots]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhotoshootInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photoshoot"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/photoshoots/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      operationId: getPhotoshoot
+      summary: A photoshoot with its generations, newest first
+      tags: [photoshoots]
+      responses:
+        "200":
+          description: The photoshoot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photoshoot"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: updatePhotoshoot
+      summary: Change a photoshoot; past generations keep their snapshot
+      tags: [photoshoots]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhotoshootInput"
+      responses:
+        "200":
+          description: The updated photoshoot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photoshoot"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deletePhotoshoot
+      summary: Delete a photoshoot that has never been generated from
+      tags: [photoshoots]
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/photoshoots/{id}/generations:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      operationId: startGeneration
+      summary: Queue a generation; returns immediately
+      description: |
+        Validates the request, plans every provider call and queues it. Poll
+        `GET /api/v1/generations/{id}` for progress.
+      tags: [generations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerationRequest"
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Generation"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/generations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      operationId: getGeneration
+      summary: A generation with its steps and images
+      tags: [generations]
+      responses:
+        "200":
+          description: The generation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Generation"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/generations/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      operationId: cancelGeneration
+      summary: Cancel a queued or running generation; produced images are kept
+      tags: [generations]
+      responses:
+        "200":
+          description: Cancelled, or cancellation requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Generation"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Already finished (`conflict`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/images:
+    get:
+      operationId: listImages
+      summary: Generated images, newest first
+      tags: [images]
+      parameters:
+        - name: productId
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: photoshootId
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ReviewStatus"
+      responses:
+        "200":
+          description: Images
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/images/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      operationId: getImage
+      summary: A generated image with the full snapshot that produced it
+      tags: [images]
+      responses:
+        "200":
+          description: The image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageDetail"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/providers:
+    get:
+      operationId: listProviders
+      summary: Configured providers, recipes and limits
+      tags: [generations]
+      responses:
+        "200":
+          description: Providers and recipes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Providers"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
   /api/v1/blobs/{hash}:
     get:
       operationId: getBlob
@@ -769,6 +1029,442 @@ components:
         createdAt:
           type: string
           format: date-time
+    AspectRatio:
+      type: string
+      enum: ["3:4", "4:5", "2:3", "1:1", "9:16", "4:3", "16:9"]
+    PhotoshootInput:
+      type: object
+      additionalProperties: false
+      description: "`productId` and `modelId` are required on create; absent fields are unchanged on update."
+      properties:
+        name:
+          type: string
+          maxLength: 200
+          description: Defaults to "<product> on <model>".
+        productId:
+          type: integer
+          format: int64
+        modelId:
+          type: integer
+          format: int64
+          description: Must not be archived.
+        aspectRatio:
+          $ref: "#/components/schemas/AspectRatio"
+        customInstructions:
+          type: string
+          maxLength: 2000
+    ProductSummary:
+      type: object
+      required: [id, name, sku, coverHash]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        sku:
+          type: string
+        coverHash:
+          type: string
+    ModelSummary:
+      type: object
+      required: [id, name, archived, coverHash]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        archived:
+          type: boolean
+        coverHash:
+          type: string
+    Photoshoot:
+      type: object
+      required: [id, name, productId, modelId, aspectRatio, customInstructions, createdAt, updatedAt, product, model, generationCount, latestImageHash]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        productId:
+          type: integer
+          format: int64
+        modelId:
+          type: integer
+          format: int64
+        aspectRatio:
+          $ref: "#/components/schemas/AspectRatio"
+        customInstructions:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        product:
+          $ref: "#/components/schemas/ProductSummary"
+        model:
+          $ref: "#/components/schemas/ModelSummary"
+        generationCount:
+          type: integer
+        latestImageHash:
+          type: string
+          description: Newest generated image, or empty.
+        generations:
+          description: Present on single-photoshoot responses, newest first (up to 100).
+          type: array
+          items:
+            $ref: "#/components/schemas/Generation"
+    PhotoshootList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Photoshoot"
+    GenerationRequest:
+      type: object
+      additionalProperties: false
+      required: [recipe, provider, variations]
+      properties:
+        recipe:
+          type: string
+          description: A recipe name from `GET /api/v1/providers`.
+        provider:
+          type: string
+        variations:
+          type: integer
+          minimum: 1
+          description: Capped by `AIFS_MAX_VARIATIONS` (see `maxVariations` in `GET /api/v1/providers`).
+    GenerationStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelled]
+    StepStatus:
+      type: string
+      enum: [pending, submitted, succeeded, failed, cancelled]
+    ReviewStatus:
+      type: string
+      enum: [pending, approved, rejected, needs_refinement]
+    GenerationInput:
+      type: object
+      required: [position, role, label, hash]
+      properties:
+        position:
+          type: integer
+        role:
+          type: string
+          enum: [garment, model]
+        label:
+          type: string
+          description: Product view or model image role.
+        hash:
+          type: string
+    Snapshot:
+      type: object
+      description: The complete, immutable record of what produced a generation's images.
+      required: [recipe, provider, variations, aspectRatio, customInstructions, photoshoot, product, model, steps, inputs]
+      properties:
+        recipe:
+          type: string
+        provider:
+          type: string
+        variations:
+          type: integer
+        aspectRatio:
+          type: string
+        customInstructions:
+          type: string
+        photoshoot:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+              format: int64
+            name:
+              type: string
+        product:
+          type: object
+          required: [id, name, sku, category, colour, printDetails]
+          properties:
+            id:
+              type: integer
+              format: int64
+            name:
+              type: string
+            sku:
+              type: string
+            category:
+              type: string
+            colour:
+              type: string
+            printDetails:
+              type: string
+        model:
+          type: object
+          required: [id, name, appearance, preferredPoses, styling]
+          properties:
+            id:
+              type: integer
+              format: int64
+            name:
+              type: string
+            appearance:
+              type: string
+            preferredPoses:
+              type: string
+            styling:
+              type: string
+        steps:
+          type: array
+          items:
+            type: object
+            required: [position, capability, purpose, provider, providerModel, prompt, inputs, usesPrevious]
+            properties:
+              position:
+                type: integer
+              capability:
+                type: string
+              purpose:
+                type: string
+              provider:
+                type: string
+              providerModel:
+                type: string
+              prompt:
+                type: string
+              inputs:
+                type: array
+                description: Positions in `inputs` sent with this step.
+                items:
+                  type: integer
+              usesPrevious:
+                type: boolean
+        inputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationInput"
+    Step:
+      type: object
+      required: [id, variation, position, capability, provider, providerModel, providerJobId, status, attempts, error, costMicros, outputHash, startedAt, finishedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        variation:
+          type: integer
+        position:
+          type: integer
+        capability:
+          type: string
+        provider:
+          type: string
+        providerModel:
+          type: string
+        providerJobId:
+          type: string
+        status:
+          $ref: "#/components/schemas/StepStatus"
+        attempts:
+          type: integer
+        error:
+          type: string
+        costMicros:
+          type: integer
+          format: int64
+        outputHash:
+          type: string
+        startedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        finishedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+    Generation:
+      type: object
+      required: [id, photoshootId, productId, modelId, recipe, provider, variations, status, error, costMicros, cancelRequested, prompt, createdAt, startedAt, finishedAt, stepsTotal, stepsDone, settings, images]
+      properties:
+        id:
+          type: integer
+          format: int64
+        photoshootId:
+          type: integer
+          format: int64
+        productId:
+          type: integer
+          format: int64
+        modelId:
+          type: integer
+          format: int64
+        recipe:
+          type: string
+        provider:
+          type: string
+        variations:
+          type: integer
+        status:
+          $ref: "#/components/schemas/GenerationStatus"
+        error:
+          type: string
+          description: Readable reason for a failed generation.
+        costMicros:
+          type: integer
+          format: int64
+          description: Total cost in millionths of a US dollar.
+        cancelRequested:
+          type: boolean
+        prompt:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        finishedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        stepsTotal:
+          type: integer
+        stepsDone:
+          type: integer
+        settings:
+          $ref: "#/components/schemas/Snapshot"
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeneratedImage"
+        steps:
+          description: Present on single-generation responses.
+          type: array
+          items:
+            $ref: "#/components/schemas/Step"
+    GeneratedImage:
+      type: object
+      required: [id, generationId, variation, hash, width, height, reviewStatus, createdAt, recipe, provider, photoshootId, product, model]
+      properties:
+        id:
+          type: integer
+          format: int64
+        generationId:
+          type: integer
+          format: int64
+        variation:
+          type: integer
+        hash:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        reviewStatus:
+          $ref: "#/components/schemas/ReviewStatus"
+        createdAt:
+          type: string
+          format: date-time
+        recipe:
+          type: string
+        provider:
+          type: string
+        photoshootId:
+          type: integer
+          format: int64
+        product:
+          $ref: "#/components/schemas/ProductSummary"
+        model:
+          $ref: "#/components/schemas/ModelSummary"
+    ImageList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeneratedImage"
+    ImageDetail:
+      allOf:
+        - $ref: "#/components/schemas/GeneratedImage"
+        - type: object
+          required: [prompt, settings, steps, costMicros]
+          properties:
+            prompt:
+              type: string
+            settings:
+              $ref: "#/components/schemas/Snapshot"
+            steps:
+              type: array
+              description: The provider calls that produced this image.
+              items:
+                $ref: "#/components/schemas/Step"
+            costMicros:
+              type: integer
+              format: int64
+    Providers:
+      type: object
+      required: [providers, recipes, maxVariations]
+      properties:
+        maxVariations:
+          type: integer
+        providers:
+          type: array
+          items:
+            type: object
+            required: [name, label, capabilities, models, unitPriceMicros, recipes]
+            properties:
+              name:
+                type: string
+              label:
+                type: string
+              capabilities:
+                type: array
+                items:
+                  type: string
+              models:
+                type: object
+                additionalProperties:
+                  type: string
+              unitPriceMicros:
+                type: integer
+                format: int64
+              recipes:
+                type: array
+                description: Recipes this provider can run on its own.
+                items:
+                  type: string
+        recipes:
+          type: array
+          items:
+            type: object
+            required: [name, label, description, steps]
+            properties:
+              name:
+                type: string
+              label:
+                type: string
+              description:
+                type: string
+              steps:
+                type: array
+                items:
+                  type: object
+                  required: [capability, purpose]
+                  properties:
+                    capability:
+                      type: string
+                    purpose:
+                      type: string
     LoginRequest:
       type: object
       required: [password]

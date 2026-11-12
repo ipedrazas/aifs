@@ -27,6 +27,9 @@ import (
 	"github.com/ipedrazas/aifs/api/internal/db"
 	"github.com/ipedrazas/aifs/api/internal/httpapi"
 	"github.com/ipedrazas/aifs/api/internal/media"
+	"github.com/ipedrazas/aifs/api/internal/provider"
+	"github.com/ipedrazas/aifs/api/internal/provider/fake"
+	"github.com/ipedrazas/aifs/api/internal/studio"
 	"github.com/ipedrazas/aifs/api/internal/version"
 	"github.com/ipedrazas/aifs/api/internal/webui"
 )
@@ -110,6 +113,21 @@ func serve() error {
 		return fmt.Errorf("blob store: %w", err)
 	}
 
+	cat := catalog.New(database, blobs, log)
+	providers := provider.NewRegistry()
+	if cfg.FakeProvider {
+		providers.Add(fake.New(cfg.FakeDelay), fake.CostMicros)
+		log.Info("fake provider enabled", "delay", cfg.FakeDelay)
+	}
+	runner := studio.NewRunner(database, blobs, providers, log, studio.RunnerConfig{
+		Workers:     cfg.Workers,
+		StepTimeout: cfg.StepTimeout,
+	})
+	studioSvc := studio.New(database, blobs, cat, providers, runner, log, studio.Config{MaxVariations: cfg.MaxVariations})
+
+	runnerDone := make(chan struct{})
+	go func() { runner.Run(ctx); close(runnerDone) }()
+
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: httpapi.New(httpapi.Deps{
@@ -118,9 +136,12 @@ func serve() error {
 			Web:            webui.FS(),
 			Auth:           authn,
 			CookieSecure:   cfg.CookieSecure,
-			Catalog:        catalog.New(database, blobs, log),
+			Catalog:        cat,
 			Media:          media.New(database, blobs),
 			MaxUploadBytes: cfg.MaxUploadBytes,
+			Studio:         studioSvc,
+			Providers:      providers,
+			MaxVariations:  cfg.MaxVariations,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       2 * time.Minute, // uploads arrive in later phases
@@ -144,6 +165,12 @@ func serve() error {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
+	}
+	// In-flight generations stop where they are and resume on next start.
+	select {
+	case <-runnerDone:
+	case <-shutdownCtx.Done():
+		log.Warn("generation runner did not stop in time")
 	}
 	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err

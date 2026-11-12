@@ -36,8 +36,20 @@ export function ProductDetail() {
         <Link to="/products" className="text-sm text-stone-600 hover:underline">
           ← Products
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold">{product.name}</h1>
-        {product.sku && <p className="text-sm text-stone-500">{product.sku}</p>}
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">{product.name}</h1>
+            {product.sku && <p className="text-sm text-stone-500">{product.sku}</p>}
+          </div>
+          {product.imageCount > 0 && (
+            <Link
+              to={`/photoshoots/new?productId=${product.id}`}
+              className="rounded bg-stone-900 px-4 py-2 text-sm font-medium text-white"
+            >
+              New photoshoot
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">

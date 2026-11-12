@@ -19,6 +19,9 @@ import (
 	"github.com/ipedrazas/aifs/api/internal/catalog"
 	"github.com/ipedrazas/aifs/api/internal/db"
 	"github.com/ipedrazas/aifs/api/internal/media"
+	"github.com/ipedrazas/aifs/api/internal/provider"
+	"github.com/ipedrazas/aifs/api/internal/provider/fake"
+	"github.com/ipedrazas/aifs/api/internal/studio"
 )
 
 type fakeDB struct {
@@ -63,15 +66,29 @@ func newTestServerDB(t *testing.T, fdb fakeDB, web fstest.MapFS, maxUpload int64
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cat := catalog.New(d, store, log)
+	reg := provider.NewRegistry()
+	reg.Add(fake.New(0), 0)
+	runner := studio.NewRunner(d, store, reg, log, studio.RunnerConfig{
+		PollInterval: 5 * time.Millisecond, ScanInterval: 20 * time.Millisecond, RetryBase: time.Millisecond,
+	})
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { runner.Run(ctx); close(done) }()
+	t.Cleanup(func() { stop(); <-done })
+
 	return New(Deps{
 		Logger:         log,
 		DB:             fdb,
 		Web:            web,
 		Auth:           newAuth(t, d),
 		CookieSecure:   true,
-		Catalog:        catalog.New(d, store, log),
+		Catalog:        cat,
 		Media:          media.New(d, store),
 		MaxUploadBytes: maxUpload,
+		Studio:         studio.New(d, store, cat, reg, runner, log, studio.Config{MaxVariations: 4}),
+		Providers:      reg,
+		MaxVariations:  4,
 	}), d
 }
 

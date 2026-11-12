@@ -61,11 +61,22 @@ All configuration comes from environment variables.
 | `AIFS_PASSWORD_FILE` | | Read the password from a file instead (Docker/Compose secrets) |
 | `AIFS_SESSION_TTL` | `720h` | How long a login lasts |
 | `AIFS_MAX_UPLOAD_MB` | `30` | Largest accepted photograph (also limited to 64 megapixels) |
+| `AIFS_MAX_VARIATIONS` | `4` | Most variations one generation may request (1–20) |
+| `AIFS_WORKERS` | `4` | Generations processed at once |
+| `AIFS_STEP_TIMEOUT` | `10m` | Hard limit for one provider call, including retries |
+| `AIFS_FAKE_PROVIDER` | `true` in development, else `false` | Enable the offline fake provider (deterministic placeholder images, no cost) |
+| `AIFS_FAKE_DELAY` | `2s` | How long each fake provider job takes |
 | `AIFS_COOKIE_SECURE` | `true` | Mark the session cookie `Secure`. Set `false` only when serving over plain HTTP on a non-localhost address |
 
 ## Data
 
 Everything lives under `AIFS_DATA_DIR`: the SQLite database (`aifs.db`) and image bytes under `blobs/`. Images are content-addressed by SHA-256. Uploaded originals (`blobs/original/`) are stored exactly as uploaded, as read-only files, and nothing in the application can modify them. Thumbnails are rendered on demand (with EXIF orientation applied) into `blobs/derived/`, which is safe to delete.
+
+## Generation
+
+A photoshoot pairs a product with a model. Generating from it queues a job and returns at once; the page shows images as they arrive. Every generation stores a complete snapshot (recipe, provider, provider model versions, prompt, settings and the hashes of every reference photograph sent), and its records are never deleted. The queue lives in the database: after a restart, unfinished generations resume from their stored provider job ids, and at most one image per variation can be recorded.
+
+Recipes combine provider calls: `reference` sends garment photographs, model references and the scene prompt in one call; `tryon` first generates the model in the scene and then dresses them with the garment photograph. Real providers arrive in later releases; until then only the fake provider is available, and only when enabled.
 
 ## Security
 

@@ -39,6 +39,17 @@ type Config struct {
 	CookieSecure bool
 	// MaxUploadBytes bounds a single uploaded photograph.
 	MaxUploadBytes int64
+
+	// MaxVariations caps the variations in one generation.
+	MaxVariations int
+	// Workers is how many generations run at once.
+	Workers int
+	// StepTimeout bounds one provider call.
+	StepTimeout time.Duration
+	// FakeProvider enables the offline test provider.
+	FakeProvider bool
+	// FakeDelay is how long each fake provider job takes.
+	FakeDelay time.Duration
 }
 
 // DevPassword is used in development mode when no password is configured.
@@ -97,7 +108,51 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	c.MaxUploadBytes = int64(mb) << 20
 
+	if c.MaxVariations, err = intEnv(getenv, "AIFS_MAX_VARIATIONS", 4, 1, 20); err != nil {
+		return Config{}, err
+	}
+	if c.Workers, err = intEnv(getenv, "AIFS_WORKERS", 4, 1, 64); err != nil {
+		return Config{}, err
+	}
+	if c.StepTimeout, err = durationEnv(getenv, "AIFS_STEP_TIMEOUT", 10*time.Minute, time.Second); err != nil {
+		return Config{}, err
+	}
+	fakeDefault := "false"
+	if c.Dev() {
+		fakeDefault = "true"
+	}
+	if c.FakeProvider, err = strconv.ParseBool(valueOr(getenv("AIFS_FAKE_PROVIDER"), fakeDefault)); err != nil {
+		return Config{}, fmt.Errorf("AIFS_FAKE_PROVIDER: %w", err)
+	}
+	if c.FakeDelay, err = durationEnv(getenv, "AIFS_FAKE_DELAY", 2*time.Second, 0); err != nil {
+		return Config{}, err
+	}
+
 	return c, nil
+}
+
+func intEnv(getenv func(string) string, key string, def, lo, hi int) (int, error) {
+	v := getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < lo || n > hi {
+		return 0, fmt.Errorf("%s must be a whole number between %d and %d, got %q", key, lo, hi, v)
+	}
+	return n, nil
+}
+
+func durationEnv(getenv func(string) string, key string, def, minimum time.Duration) (time.Duration, error) {
+	v := getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < minimum {
+		return 0, fmt.Errorf("%s must be a duration of at least %s, got %q", key, minimum, v)
+	}
+	return d, nil
 }
 
 // MinPasswordLength is enforced in production.
