@@ -242,6 +242,11 @@ function GenerationCard({ g, photoshootId }: { g: Generation; photoshootId: numb
           <span title="Created">{formatDate(g.createdAt)}</span>
           <span title="Duration">{formatDuration(g.startedAt, g.finishedAt)}</span>
           <span title="Cost">{formatCost(g.costMicros)}</span>
+          {g.images.length > 0 && (
+            <Link to={`/review/${g.images[g.images.length - 1].id}?generationId=${g.id}&status=`} className="font-medium text-stone-700 underline">
+              Review
+            </Link>
+          )}
           {active && (
             <ConfirmButton confirmLabel="Cancel generation" disabled={cancel.isPending || g.cancelRequested} onConfirm={() => cancel.mutate(g.id)}>
               {g.cancelRequested ? 'Cancelling…' : 'Cancel'}
@@ -264,8 +269,13 @@ function GenerationCard({ g, photoshootId }: { g: Generation; photoshootId: numb
           if (im) {
             return (
               <li key={v}>
-                <Link to={`/images/${im.id}`} className="block overflow-hidden rounded border border-stone-200 hover:border-stone-400" data-testid="generated-image">
+                <Link to={`/images/${im.id}`} className="relative block overflow-hidden rounded border border-stone-200 hover:border-stone-400" data-testid="generated-image">
                   <img src={blobUrl(im.hash, 512)} alt={`Variation ${v}`} loading="lazy" className="aspect-[3/4] w-full bg-stone-100 object-cover" />
+                  {im.reviewStatus !== 'pending' && (
+                    <span className="absolute left-1 top-1">
+                      <StatusBadge status={im.reviewStatus} />
+                    </span>
+                  )}
                 </Link>
               </li>
             )

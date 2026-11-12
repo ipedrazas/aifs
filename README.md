@@ -78,6 +78,10 @@ A photoshoot pairs a product with a model. Generating from it queues a job and r
 
 Recipes combine provider calls: `reference` sends garment photographs, model references and the scene prompt in one call; `tryon` first generates the model in the scene and then dresses them with the garment photograph. Real providers arrive in later releases; until then only the fake provider is available, and only when enabled.
 
+## Review
+
+Every generated image starts as pending and only a human decision in the Review screen changes that: approve, reject with a reason (product fidelity, photographic quality, other) or mark as needing refinement. The database enforces it: a review status can only change together with a recorded review event, and the history of decisions is append-only. The review screen compares the image with any reference photograph side by side, as a swipe or as an overlay, with linked zoom and pan; press `?` there for keyboard shortcuts.
+
 ## Security
 
 Everything under `/api/v1` except `POST /api/v1/session` requires a session. Sessions are random tokens kept server-side (only their SHA-256 is stored), sent as an `HttpOnly`, `SameSite=Strict` cookie. Login attempts are rate limited per client IP and in total. State-changing requests from another origin are rejected. Run it behind an HTTPS reverse proxy when it is reachable from other machines; behind a proxy all clients share one rate-limit bucket.

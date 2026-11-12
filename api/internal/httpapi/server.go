@@ -99,6 +99,7 @@ func New(d Deps) http.Handler {
 	api.HandleFunc("POST /api/v1/generations/{id}/cancel", st.cancelGeneration)
 	api.HandleFunc("GET /api/v1/images", st.listImages)
 	api.HandleFunc("GET /api/v1/images/{id}", st.getImage)
+	api.HandleFunc("POST /api/v1/images/{id}/review", st.reviewImage)
 	api.HandleFunc("GET /api/v1/providers", st.providers)
 
 	api.HandleFunc("GET /api/v1/blobs/{hash}", blobHandler(d))

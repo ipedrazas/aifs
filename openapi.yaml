@@ -668,6 +668,11 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: generationId
+          in: query
+          schema:
+            type: integer
+            format: int64
         - name: status
           in: query
           schema:
@@ -705,6 +710,43 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/images/{id}/review:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      operationId: reviewImage
+      summary: Record a human review decision
+      description: |
+        The only way an image's review status changes. Every decision is kept
+        in `reviewHistory`; review again to change it. A rejection needs a
+        reason. Images can never return to `pending`.
+      tags: [images]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewInput"
+      responses:
+        "200":
+          description: The image with its updated review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
           $ref: "#/components/responses/Error"
   /api/v1/providers:
     get:
@@ -1353,7 +1395,7 @@ components:
             $ref: "#/components/schemas/Step"
     GeneratedImage:
       type: object
-      required: [id, generationId, variation, hash, width, height, reviewStatus, createdAt, recipe, provider, photoshootId, product, model]
+      required: [id, generationId, variation, hash, width, height, reviewStatus, rejectionReason, reviewerNotes, reviewedAt, createdAt, recipe, provider, photoshootId, product, model]
       properties:
         id:
           type: integer
@@ -1371,6 +1413,19 @@ components:
           type: integer
         reviewStatus:
           $ref: "#/components/schemas/ReviewStatus"
+        rejectionReason:
+          description: Set when rejected, otherwise empty.
+          oneOf:
+            - $ref: "#/components/schemas/RejectionReason"
+            - type: string
+              const: ""
+        reviewerNotes:
+          type: string
+        reviewedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
         createdAt:
           type: string
           format: date-time
@@ -1397,7 +1452,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/GeneratedImage"
         - type: object
-          required: [prompt, settings, steps, costMicros]
+          required: [prompt, settings, steps, costMicros, reviewHistory]
           properties:
             prompt:
               type: string
@@ -1411,6 +1466,46 @@ components:
             costMicros:
               type: integer
               format: int64
+            reviewHistory:
+              type: array
+              description: Every review decision, oldest first.
+              items:
+                $ref: "#/components/schemas/ReviewEvent"
+    RejectionReason:
+      type: string
+      enum: [fidelity, photo_quality, other]
+    ReviewDecision:
+      type: string
+      enum: [approved, rejected, needs_refinement]
+    ReviewInput:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/ReviewDecision"
+        reason:
+          description: Required when rejecting; omit otherwise.
+          $ref: "#/components/schemas/RejectionReason"
+        notes:
+          type: string
+          maxLength: 2000
+    ReviewEvent:
+      type: object
+      required: [id, status, rejectionReason, notes, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/ReviewDecision"
+        rejectionReason:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     Providers:
       type: object
       required: [providers, recipes, maxVariations]

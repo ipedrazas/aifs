@@ -138,19 +138,23 @@ type Step struct {
 
 // GeneratedImage is a produced photograph with what made it.
 type GeneratedImage struct {
-	ID           int64          `json:"id"`
-	GenerationID int64          `json:"generationId"`
-	Variation    int            `json:"variation"`
-	Hash         string         `json:"hash"`
-	Width        int            `json:"width"`
-	Height       int            `json:"height"`
-	ReviewStatus string         `json:"reviewStatus"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	Recipe       string         `json:"recipe"`
-	Provider     string         `json:"provider"`
-	PhotoshootID int64          `json:"photoshootId"`
-	Product      ProductSummary `json:"product"`
-	Model        ModelSummary   `json:"model"`
+	ID           int64  `json:"id"`
+	GenerationID int64  `json:"generationId"`
+	Variation    int    `json:"variation"`
+	Hash         string `json:"hash"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	ReviewStatus string `json:"reviewStatus"`
+	// RejectionReason is set when ReviewStatus is "rejected".
+	RejectionReason string         `json:"rejectionReason"`
+	ReviewerNotes   string         `json:"reviewerNotes"`
+	ReviewedAt      *time.Time     `json:"reviewedAt"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	Recipe          string         `json:"recipe"`
+	Provider        string         `json:"provider"`
+	PhotoshootID    int64          `json:"photoshootId"`
+	Product         ProductSummary `json:"product"`
+	Model           ModelSummary   `json:"model"`
 }
 
 // GenerationRequest starts a generation.
@@ -467,7 +471,7 @@ type ImageFilter struct {
 var ReviewStatuses = []string{"pending", "approved", "rejected", "needs_refinement"}
 
 const imageSelect = `SELECT gi.id, gi.generation_id, gi.variation, gi.blob_hash, b.width, b.height, gi.review_status,
-	gi.created_at, g.recipe, g.provider, g.photoshoot_id, p.id, p.name, COALESCE(p.sku, ''), m.id, m.name, m.archived_at IS NOT NULL
+	COALESCE(gi.rejection_reason, ''), gi.reviewer_notes, gi.reviewed_at, gi.created_at, g.recipe, g.provider, g.photoshoot_id, p.id, p.name, COALESCE(p.sku, ''), m.id, m.name, m.archived_at IS NOT NULL
 	FROM generated_image gi
 	JOIN generation g ON g.id = gi.generation_id
 	JOIN blob b ON b.hash = gi.blob_hash
@@ -477,10 +481,11 @@ const imageSelect = `SELECT gi.id, gi.generation_id, gi.variation, gi.blob_hash,
 func scanGeneratedImage(row scanner) (GeneratedImage, error) {
 	var im GeneratedImage
 	var created string
+	var reviewed *string
 	err := row.Scan(&im.ID, &im.GenerationID, &im.Variation, &im.Hash, &im.Width, &im.Height, &im.ReviewStatus,
-		&created, &im.Recipe, &im.Provider, &im.PhotoshootID,
+		&im.RejectionReason, &im.ReviewerNotes, &reviewed, &created, &im.Recipe, &im.Provider, &im.PhotoshootID,
 		&im.Product.ID, &im.Product.Name, &im.Product.SKU, &im.Model.ID, &im.Model.Name, &im.Model.Archived)
-	im.CreatedAt = parseTime(created)
+	im.CreatedAt, im.ReviewedAt = parseTime(created), parseTimePtr(reviewed)
 	return im, err
 }
 
@@ -534,6 +539,8 @@ type ImageDetail struct {
 	Steps    []Step   `json:"steps"`
 	// CostMicros is the cost of the steps that produced this image.
 	CostMicros int64 `json:"costMicros"`
+	// ReviewHistory lists every decision, oldest first.
+	ReviewHistory []ReviewEvent `json:"reviewHistory"`
 }
 
 // GetImage returns one generated image with the snapshot that produced it.
@@ -550,6 +557,9 @@ func (s *Service) GetImage(ctx context.Context, id int64) (ImageDetail, error) {
 		return ImageDetail{}, err
 	}
 	d := ImageDetail{GeneratedImage: im, Prompt: g.Prompt, Settings: g.Settings, Steps: []Step{}}
+	if d.ReviewHistory, err = s.reviewHistory(ctx, id); err != nil {
+		return ImageDetail{}, err
+	}
 	for _, st := range g.Steps {
 		if st.Variation == im.Variation {
 			d.Steps = append(d.Steps, st)

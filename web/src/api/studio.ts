@@ -6,6 +6,8 @@ import {
   type GenerationRequest,
   type Photoshoot,
   type PhotoshootInput,
+  type ImageDetail,
+  type ReviewInput,
   type ReviewStatus,
 } from './client'
 
@@ -109,7 +111,9 @@ export function useCancelGeneration(photoshootId: number) {
   })
 }
 
-export function useImages(filter: { productId?: number; photoshootId?: number; status?: ReviewStatus }) {
+export type ImageFilter = { productId?: number; photoshootId?: number; generationId?: number; status?: ReviewStatus }
+
+export function useImages(filter: ImageFilter) {
   return useQuery({
     queryKey: [...keys.images, 'list', filter],
     queryFn: async () => unwrap(await api.GET('/api/v1/images', { params: { query: filter } })).items,
@@ -120,5 +124,19 @@ export function useImage(id: number) {
   return useQuery({
     queryKey: keys.image(id),
     queryFn: async () => unwrap(await api.GET('/api/v1/images/{id}', { params: { path: { id } } })),
+  })
+}
+
+/** Records a review decision for an image. */
+export function useReviewImage() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...body }: ReviewInput & { id: number }) =>
+      unwrap(await api.POST('/api/v1/images/{id}/review', { params: { path: { id } }, body })),
+    onSuccess: (im: ImageDetail) => {
+      client.setQueryData(keys.image(im.id), im)
+      void client.invalidateQueries({ queryKey: [...keys.images, 'list'] })
+      void client.invalidateQueries({ queryKey: keys.photoshoot(im.photoshootId) })
+    },
   })
 }

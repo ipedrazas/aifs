@@ -141,11 +141,15 @@ type ImageList struct {
 }
 
 func (h studioHandlers) listImages(w http.ResponseWriter, r *http.Request) {
-	items, err := h.d.Studio.ListImages(r.Context(), studio.ImageFilter{
+	f := studio.ImageFilter{
 		ProductID:    queryID(r, "productId"),
 		PhotoshootID: queryID(r, "photoshootId"),
 		ReviewStatus: r.URL.Query().Get("status"),
-	})
+	}
+	if id := queryID(r, "generationId"); id > 0 {
+		f.GenerationIDs = []int64{id}
+	}
+	items, err := h.d.Studio.ListImages(r.Context(), f)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -159,6 +163,24 @@ func (h studioHandlers) getImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	im, err := h.d.Studio.GetImage(r.Context(), id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, im)
+}
+
+// reviewImage records a human review decision.
+func (h studioHandlers) reviewImage(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var in studio.ReviewInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	im, err := h.d.Studio.ReviewImage(r.Context(), id, in)
 	if err != nil {
 		h.fail(w, r, err)
 		return
