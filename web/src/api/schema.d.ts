@@ -376,6 +376,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/images/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a human review decision
+         * @description The only way an image's review status changes. Every decision is kept
+         *     in `reviewHistory`; review again to change it. A rejection needs a
+         *     reason. Images can never return to `pending`.
+         */
+        post: operations["reviewImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/providers": {
         parameters: {
             query?: never;
@@ -713,6 +737,10 @@ export interface components {
             width: number;
             height: number;
             reviewStatus: components["schemas"]["ReviewStatus"];
+            /** @description Set when rejected, otherwise empty. */
+            rejectionReason: components["schemas"]["RejectionReason"] | "";
+            reviewerNotes: string;
+            reviewedAt: string | null;
             /** Format: date-time */
             createdAt: string;
             recipe: string;
@@ -732,6 +760,27 @@ export interface components {
             steps: components["schemas"]["Step"][];
             /** Format: int64 */
             costMicros: number;
+            /** @description Every review decision, oldest first. */
+            reviewHistory: components["schemas"]["ReviewEvent"][];
+        };
+        /** @enum {string} */
+        RejectionReason: "fidelity" | "photo_quality" | "other";
+        /** @enum {string} */
+        ReviewDecision: "approved" | "rejected" | "needs_refinement";
+        ReviewInput: {
+            status: components["schemas"]["ReviewDecision"];
+            /** @description Required when rejecting; omit otherwise. */
+            reason?: components["schemas"]["RejectionReason"];
+            notes?: string;
+        };
+        ReviewEvent: {
+            /** Format: int64 */
+            id: number;
+            status: components["schemas"]["ReviewDecision"];
+            rejectionReason: string;
+            notes: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         Providers: {
             maxVariations: number;
@@ -1590,6 +1639,7 @@ export interface operations {
             query?: {
                 productId?: number;
                 photoshootId?: number;
+                generationId?: number;
                 status?: components["schemas"]["ReviewStatus"];
             };
             header?: never;
@@ -1633,6 +1683,36 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["Error"];
+        };
+    };
+    reviewImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewInput"];
+            };
+        };
+        responses: {
+            /** @description The image with its updated review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageDetail"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     listProviders: {

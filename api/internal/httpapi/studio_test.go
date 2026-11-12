@@ -146,3 +146,38 @@ func TestProvidersEndpoint(t *testing.T) {
 		t.Fatalf("providers: %+v", resp)
 	}
 }
+
+func TestReviewEndpoint(t *testing.T) {
+	h := newServerT(t, fakeDB{}, webFS)
+	c := login(t, h)
+	ps := shootFixture(t, h, c, "")
+	rec := doBody(t, h, http.MethodPost, "/api/v1/photoshoots/"+strconv.FormatInt(ps.ID, 10)+"/generations",
+		`{"recipe":"reference","provider":"fake","variations":2}`, c)
+	g := waitGeneration(t, h, c, decode[studio.Generation](t, rec).ID, "succeeded")
+	path := "/api/v1/images/" + strconv.FormatInt(g.Images[0].ID, 10) + "/review"
+
+	if rec := doBody(t, h, http.MethodPost, path, `{"status":"rejected"}`, c); rec.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(rec.Body.String(), `"reason"`) {
+		t.Fatalf("reject without reason: %d %s", rec.Code, rec.Body)
+	}
+	rec = doBody(t, h, http.MethodPost, path, `{"status":"rejected","reason":"photo_quality","notes":"blurry"}`, c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reject: %d %s", rec.Code, rec.Body)
+	}
+	d := decode[studio.ImageDetail](t, rec)
+	if d.ReviewStatus != "rejected" || d.RejectionReason != "photo_quality" || len(d.ReviewHistory) != 1 {
+		t.Fatalf("detail: %+v", d)
+	}
+	if rec := doBody(t, h, http.MethodPost, path, `{"status":"approved"}`, c); rec.Code != http.StatusOK {
+		t.Fatalf("change decision: %d", rec.Code)
+	}
+	if rec := doBody(t, h, http.MethodPost, "/api/v1/images/9999/review", `{"status":"approved"}`, c); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing image: %d", rec.Code)
+	}
+
+	approved := decode[ImageList](t, do(t, h, http.MethodGet, "/api/v1/images?status=approved", c))
+	pending := decode[ImageList](t, do(t, h, http.MethodGet, "/api/v1/images?status=pending&generationId="+strconv.FormatInt(g.ID, 10), c))
+	if len(approved.Items) != 1 || len(pending.Items) != 1 || approved.Items[0].ReviewedAt == nil {
+		t.Fatalf("filters: approved=%d pending=%d", len(approved.Items), len(pending.Items))
+	}
+}

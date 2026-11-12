@@ -36,7 +36,12 @@ export function ImageDetailPage() {
         <div className="space-y-6 text-sm">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold">Image {im.id}</h1>
-            <StatusBadge status={im.reviewStatus} />
+            <div className="flex items-center gap-3">
+              <StatusBadge status={im.reviewStatus} />
+              <Link to={`/review/${im.id}?generationId=${im.generationId}&status=`} className="rounded bg-stone-900 px-3 py-1.5 text-xs font-medium text-white">
+                Review
+              </Link>
+            </div>
           </div>
 
           <dl className="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2" aria-label="Provenance">

@@ -21,6 +21,9 @@ export type GeneratedImage = components['schemas']['GeneratedImage']
 export type ImageDetail = components['schemas']['ImageDetail']
 export type Providers = components['schemas']['Providers']
 export type ReviewStatus = components['schemas']['ReviewStatus']
+export type ReviewInput = components['schemas']['ReviewInput']
+export type ReviewDecision = components['schemas']['ReviewDecision']
+export type RejectionReason = components['schemas']['RejectionReason']
 type ErrorBody = components['schemas']['Error']
 
 export const api = createClient<paths>({
