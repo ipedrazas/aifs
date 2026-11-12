@@ -1,18 +1,23 @@
 import { Link, useNavigate, useParams } from 'react-router'
-import { blobUrl, type ProductImage } from '../../api/client'
+import type { ProductImage, View } from '../../api/client'
 import {
   useDeleteImage,
   useDeleteProduct,
   useProduct,
   useUpdateProduct,
+  useUploadImage,
   VIEW_LABELS,
   VIEWS,
 } from '../../api/products'
+import { ImageGroups } from '../../components/ImageGroups'
+import { ImageUploader } from '../../components/ImageUploader'
 import { ConfirmButton } from '../../components/ui/ConfirmButton'
 import { ErrorMessage } from '../../components/ui/ErrorMessage'
 import { NotFound } from '../NotFound'
-import { ImageUploader } from './ImageUploader'
+import { guessView } from './guessView'
 import { ProductForm } from './ProductForm'
+
+const VIEW_OPTIONS = VIEWS.map((v) => ({ value: v, label: VIEW_LABELS[v] }))
 
 export function ProductDetail() {
   const id = Number(useParams().id)
@@ -39,7 +44,7 @@ export function ProductDetail() {
         <div className="space-y-6">
           <h2 className="text-lg font-semibold">Reference photographs</h2>
           <Photos productId={product.id} images={product.images ?? []} />
-          <ImageUploader productId={product.id} />
+          <Uploader productId={product.id} />
         </div>
         <div className="space-y-6">
           <h2 className="text-lg font-semibold">Details</h2>
@@ -64,6 +69,18 @@ function EditProduct({ product }: { product: NonNullable<ReturnType<typeof usePr
   )
 }
 
+function Uploader({ productId }: { productId: number }) {
+  const upload = useUploadImage(productId)
+  return (
+    <ImageUploader
+      options={VIEW_OPTIONS}
+      labelName="View"
+      guess={guessView}
+      upload={(file, view) => upload.mutateAsync({ file, view: view as View })}
+    />
+  )
+}
+
 function Photos({ productId, images }: { productId: number; images: ProductImage[] }) {
   const del = useDeleteImage(productId)
   if (images.length === 0) {
@@ -72,36 +89,13 @@ function Photos({ productId, images }: { productId: number; images: ProductImage
   return (
     <div className="space-y-4">
       <ErrorMessage error={del.error} />
-      {VIEWS.filter((v) => images.some((i) => i.view === v)).map((view) => (
-        <div key={view} className="space-y-2">
-          <h3 className="text-sm font-medium text-stone-700">{VIEW_LABELS[view]}</h3>
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {images
-              .filter((i) => i.view === view)
-              .map((im) => (
-                <li key={im.id} className="overflow-hidden rounded border border-stone-200 bg-white" data-testid="product-image">
-                  <a href={blobUrl(im.hash)} target="_blank" rel="noreferrer" title="Open the original">
-                    <img
-                      src={blobUrl(im.hash, 512)}
-                      alt={`${VIEW_LABELS[view]} view: ${im.filename}`}
-                      loading="lazy"
-                      className="aspect-[3/4] w-full bg-stone-100 object-contain"
-                    />
-                  </a>
-                  <div className="flex items-center justify-between gap-2 p-2">
-                    <p className="min-w-0 truncate text-xs text-stone-500" title={im.filename}>
-                      {im.width}×{im.height}
-                      {im.filename ? ` · ${im.filename}` : ''}
-                    </p>
-                    <ConfirmButton onConfirm={() => del.mutate(im.id)} disabled={del.isPending} confirmLabel="Delete">
-                      Delete
-                    </ConfirmButton>
-                  </div>
-                </li>
-              ))}
-          </ul>
-        </div>
-      ))}
+      <ImageGroups
+        images={images.map((i) => ({ ...i, group: i.view }))}
+        groups={VIEW_OPTIONS}
+        onDelete={(id) => del.mutate(id)}
+        deleting={del.isPending}
+        testId="product-image"
+      />
     </div>
   )
 }

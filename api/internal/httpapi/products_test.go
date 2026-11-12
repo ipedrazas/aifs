@@ -34,18 +34,23 @@ func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 	return v
 }
 
-func upload(t *testing.T, h http.Handler, cookie *http.Cookie, productID int64, view, filename string, data []byte) *httptest.ResponseRecorder {
+func uploadProduct(t *testing.T, h http.Handler, cookie *http.Cookie, productID int64, view, filename string, data []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	return uploadTo(t, h, cookie, "/api/v1/products/"+strconv.FormatInt(productID, 10)+"/images", "view", view, filename, data)
+}
+
+func uploadTo(t *testing.T, h http.Handler, cookie *http.Cookie, path, labelField, label, filename string, data []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	if view != "" {
-		_ = mw.WriteField("view", view)
+	if label != "" {
+		_ = mw.WriteField(labelField, label)
 	}
 	fw, _ := mw.CreateFormFile("file", filename)
 	_, _ = fw.Write(data)
 	_ = mw.Close()
 
-	req := newReq(http.MethodPost, "/api/v1/products/"+strconv.FormatInt(productID, 10)+"/images", "")
+	req := newReq(http.MethodPost, path, "")
 	req.Body = httpBody(body.Bytes())
 	req.ContentLength = int64(body.Len())
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -123,11 +128,11 @@ func TestUploadAndDownloadByteIdentical(t *testing.T) {
 		{"plain.webp", "print", "image/webp"},
 	} {
 		data := fixture(t, f.file)
-		rec := upload(t, h, c, p.ID, f.view, f.file, data)
+		rec := uploadProduct(t, h, c, p.ID, f.view, f.file, data)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("%s: %d %s", f.file, rec.Code, rec.Body)
 		}
-		im := decode[catalog.Image](t, rec)
+		im := decode[catalog.ProductImage](t, rec)
 		if im.View != f.view || im.ContentType != f.ct || im.Filename != f.file {
 			t.Fatalf("%s: %+v", f.file, im)
 		}
@@ -159,7 +164,7 @@ func TestThumbnail(t *testing.T) {
 	h := newServerT(t, fakeDB{}, webFS)
 	c := login(t, h)
 	p := createProduct(t, h, c, `{"name":"jeans"}`)
-	im := decode[catalog.Image](t, upload(t, h, c, p.ID, "front", "r.jpg", fixture(t, "rot6.jpg")))
+	im := decode[catalog.ProductImage](t, uploadProduct(t, h, c, p.ID, "front", "r.jpg", fixture(t, "rot6.jpg")))
 
 	rec := do(t, h, http.MethodGet, "/api/v1/blobs/"+im.Hash+"?w=300", c)
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/jpeg" {
@@ -210,13 +215,13 @@ func TestUploadRejections(t *testing.T) {
 		{"bad view", "top", "a.jpg", fixture(t, "plain.jpg"), 422, "view"},
 	}
 	for _, tc := range cases {
-		rec := upload(t, h, c, p.ID, tc.view, tc.file, tc.data)
+		rec := uploadProduct(t, h, c, p.ID, tc.view, tc.file, tc.data)
 		if rec.Code != tc.status || !strings.Contains(rec.Body.String(), tc.msg) {
 			t.Errorf("%s: %d %s", tc.name, rec.Code, rec.Body)
 		}
 	}
 
-	if rec := upload(t, h, c, 9999, "front", "a.jpg", fixture(t, "plain.jpg")); rec.Code != http.StatusNotFound {
+	if rec := uploadProduct(t, h, c, 9999, "front", "a.jpg", fixture(t, "plain.jpg")); rec.Code != http.StatusNotFound {
 		t.Errorf("missing product: %d", rec.Code)
 	}
 
@@ -231,7 +236,7 @@ func TestOriginalsCannotBeModified(t *testing.T) {
 	h := newServerT(t, fakeDB{}, webFS)
 	c := login(t, h)
 	p := createProduct(t, h, c, `{"name":"jeans"}`)
-	im := decode[catalog.Image](t, upload(t, h, c, p.ID, "front", "a.jpg", fixture(t, "plain.jpg")))
+	im := decode[catalog.ProductImage](t, uploadProduct(t, h, c, p.ID, "front", "a.jpg", fixture(t, "plain.jpg")))
 	base := "/api/v1/products/" + strconv.FormatInt(p.ID, 10) + "/images/" + strconv.FormatInt(im.ID, 10)
 
 	// No route modifies an image record or its bytes.

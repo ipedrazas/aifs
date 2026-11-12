@@ -71,6 +71,15 @@ func New(d Deps) http.Handler {
 	api.HandleFunc("POST /api/v1/products/{id}/images", products.uploadImage)
 	api.HandleFunc("DELETE /api/v1/products/{id}/images/{imageId}", products.deleteImage)
 
+	models := modelHandlers{d: d}
+	api.HandleFunc("GET /api/v1/models", models.list)
+	api.HandleFunc("POST /api/v1/models", models.create)
+	api.HandleFunc("GET /api/v1/models/{id}", models.get)
+	api.HandleFunc("PATCH /api/v1/models/{id}", models.update)
+	api.HandleFunc("DELETE /api/v1/models/{id}", models.delete)
+	api.HandleFunc("POST /api/v1/models/{id}/images", models.uploadImage)
+	api.HandleFunc("DELETE /api/v1/models/{id}/images/{imageId}", models.deleteImage)
+
 	api.HandleFunc("GET /api/v1/blobs/{hash}", blobHandler(d))
 
 	api.HandleFunc("/api/v1/", func(w http.ResponseWriter, _ *http.Request) {

@@ -1,14 +1,13 @@
 import { useEffect, useId, useRef, useState, type DragEvent } from 'react'
-import type { View } from '../../api/client'
-import { useUploadImage, VIEWS, VIEW_LABELS } from '../../api/products'
-import { guessView } from './guessView'
 
 const ACCEPT = ['image/jpeg', 'image/png', 'image/webp']
+
+export type LabelOption = { value: string; label: string }
 
 type Item = {
   key: string
   file: File
-  view: View
+  label: string
   preview: string
   status: 'ready' | 'uploading' | 'failed'
   error?: string
@@ -16,10 +15,25 @@ type Item = {
 
 let counter = 0
 
-export function ImageUploader({ productId }: { productId: number }) {
+/**
+ * Queue photographs, label each one (view or role), then upload them one by
+ * one. Failed uploads stay in the queue with the server's reason.
+ */
+export function ImageUploader({
+  options,
+  labelName,
+  guess,
+  upload,
+}: {
+  options: LabelOption[]
+  /** What the label is called, e.g. "View" or "Role". */
+  labelName: string
+  /** Initial label for a file, from its name. */
+  guess: (filename: string) => string
+  upload: (file: File, label: string) => Promise<unknown>
+}) {
   const [items, setItems] = useState<Item[]>([])
   const [dragging, setDragging] = useState(false)
-  const upload = useUploadImage(productId)
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const previews = useRef(new Set<string>())
@@ -38,7 +52,7 @@ export function ImageUploader({ productId }: { productId: number }) {
       next.push({
         key: `f${++counter}`,
         file,
-        view: guessView(file.name),
+        label: guess(file.name),
         preview,
         status: 'ready',
         error: ACCEPT.includes(file.type) ? undefined : 'Only JPEG, PNG and WebP photographs are accepted.',
@@ -67,7 +81,7 @@ export function ImageUploader({ productId }: { productId: number }) {
       if (item.status === 'uploading') continue
       patch(item.key, { status: 'uploading', error: undefined })
       try {
-        await upload.mutateAsync({ file: item.file, view: item.view })
+        await upload(item.file, item.label)
         remove(item.key)
       } catch (err) {
         patch(item.key, { status: 'failed', error: (err as Error).message })
@@ -122,16 +136,18 @@ export function ImageUploader({ productId }: { productId: number }) {
                 {item.error && <p className="text-xs text-red-700">{item.error}</p>}
               </div>
               <label className="text-sm">
-                <span className="sr-only">View for {item.file.name}</span>
+                <span className="sr-only">
+                  {labelName} for {item.file.name}
+                </span>
                 <select
-                  value={item.view}
+                  value={item.label}
                   disabled={item.status === 'uploading'}
-                  onChange={(e) => patch(item.key, { view: e.target.value as View })}
+                  onChange={(e) => patch(item.key, { label: e.target.value })}
                   className="rounded border border-stone-300 px-2 py-1"
                 >
-                  {VIEWS.map((v) => (
-                    <option key={v} value={v}>
-                      {VIEW_LABELS[v]}
+                  {options.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
                     </option>
                   ))}
                 </select>

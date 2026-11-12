@@ -7,6 +7,10 @@ export type Product = components['schemas']['Product']
 export type ProductInput = components['schemas']['ProductInput']
 export type ProductImage = components['schemas']['ProductImage']
 export type View = components['schemas']['View']
+export type Model = components['schemas']['Model']
+export type ModelInput = components['schemas']['ModelInput']
+export type ModelImage = components['schemas']['ModelImage']
+export type ModelImageRole = components['schemas']['ModelImageRole']
 type ErrorBody = components['schemas']['Error']
 
 export const api = createClient<paths>({

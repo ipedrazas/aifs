@@ -23,7 +23,7 @@ type ProductList struct {
 }
 
 func (h productHandlers) list(w http.ResponseWriter, r *http.Request) {
-	items, err := h.d.Catalog.List(r.Context())
+	items, err := h.d.Catalog.ListProducts(r.Context())
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -32,11 +32,11 @@ func (h productHandlers) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h productHandlers) create(w http.ResponseWriter, r *http.Request) {
-	var in catalog.Input
+	var in catalog.ProductInput
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	p, err := h.d.Catalog.Create(r.Context(), in)
+	p, err := h.d.Catalog.CreateProduct(r.Context(), in)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -50,7 +50,7 @@ func (h productHandlers) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, err := h.d.Catalog.Get(r.Context(), id)
+	p, err := h.d.Catalog.GetProduct(r.Context(), id)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -63,11 +63,11 @@ func (h productHandlers) update(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in catalog.Input
+	var in catalog.ProductInput
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	p, err := h.d.Catalog.Update(r.Context(), id, in)
+	p, err := h.d.Catalog.UpdateProduct(r.Context(), id, in)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -80,7 +80,7 @@ func (h productHandlers) delete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.d.Catalog.Delete(r.Context(), id); err != nil {
+	if err := h.d.Catalog.DeleteProduct(r.Context(), id); err != nil {
 		h.fail(w, r, err)
 		return
 	}
@@ -88,65 +88,78 @@ func (h productHandlers) delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // uploadImage accepts multipart/form-data with a "view" field and one
-// "file" part. The file is read whole (bounded by MaxUploadBytes), validated
-// and stored byte for byte.
+// "file" part.
 func (h productHandlers) uploadImage(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	limit := h.d.MaxUploadBytes
+	up, ok := readUpload(w, r, h.d.MaxUploadBytes, "view")
+	if !ok {
+		return
+	}
+	im, err := h.d.Catalog.AddProductImage(r.Context(), id, up.label, up.filename, up.data)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, im)
+}
+
+type upload struct {
+	label    string // value of the label field (view or role)
+	filename string
+	data     []byte
+}
+
+// readUpload parses a multipart/form-data body with one text field named
+// labelField and one "file" part. The file is read whole, bounded by limit;
+// it is validated and stored byte for byte by the catalog.
+func readUpload(w http.ResponseWriter, r *http.Request, limit int64, labelField string) (upload, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, limit+64<<10) // headroom for the multipart envelope
 	mr, err := r.MultipartReader()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "expected a multipart/form-data upload")
-		return
+		return upload{}, false
 	}
 
-	var view, filename string
-	var data []byte
+	var up upload
 	for {
 		part, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			h.uploadReadError(w, err)
-			return
+			uploadReadError(w, err, limit)
+			return upload{}, false
 		}
 		switch part.FormName() {
-		case "view":
+		case labelField:
 			b, err := io.ReadAll(io.LimitReader(part, 64))
 			if err != nil {
-				h.uploadReadError(w, err)
-				return
+				uploadReadError(w, err, limit)
+				return upload{}, false
 			}
-			view = strings.TrimSpace(string(b))
+			up.label = strings.TrimSpace(string(b))
 		case "file":
-			if data != nil {
+			if up.data != nil {
 				writeError(w, http.StatusBadRequest, "bad_request", "upload one file per request")
-				return
+				return upload{}, false
 			}
-			filename = part.FileName()
-			data, err = readPart(part, limit)
+			up.filename = part.FileName()
+			up.data, err = readPart(part, limit)
 			if err != nil {
-				h.uploadReadError(w, err)
-				return
+				uploadReadError(w, err, limit)
+				return upload{}, false
 			}
 		}
 		_ = part.Close()
 	}
-	if data == nil {
+	if up.data == nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "no file in the upload")
-		return
+		return upload{}, false
 	}
-
-	im, err := h.d.Catalog.AddImage(r.Context(), id, view, filename, data)
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, im)
+	return up, true
 }
 
 var errTooLarge = errors.New("too large")
@@ -162,11 +175,10 @@ func readPart(p *multipart.Part, limit int64) ([]byte, error) {
 	return b, nil
 }
 
-func (h productHandlers) uploadReadError(w http.ResponseWriter, err error) {
+func uploadReadError(w http.ResponseWriter, err error, limit int64) {
 	var mbe *http.MaxBytesError
 	if errors.Is(err, errTooLarge) || errors.As(err, &mbe) {
-		writeError(w, http.StatusRequestEntityTooLarge, "too_large",
-			"the file is larger than the "+strconv.FormatInt(h.d.MaxUploadBytes>>20, 10)+" MB limit")
+		writeError(w, http.StatusRequestEntityTooLarge, "too_large", "the file is larger than the "+formatMB(limit)+" limit")
 		return
 	}
 	writeError(w, http.StatusBadRequest, "bad_request", "could not read the upload")
@@ -181,15 +193,26 @@ func (h productHandlers) deleteImage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.d.Catalog.DeleteImage(r.Context(), id, imageID); err != nil {
+	if err := h.d.Catalog.DeleteProductImage(r.Context(), id, imageID); err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// fail maps service errors to HTTP responses.
+func formatMB(n int64) string {
+	if n >= 1<<20 {
+		return strconv.FormatInt(n>>20, 10) + " MB"
+	}
+	return strconv.FormatInt(n, 10) + " byte"
+}
+
 func (h productHandlers) fail(w http.ResponseWriter, r *http.Request, err error) {
+	failCatalog(h.d, w, r, err)
+}
+
+// failCatalog maps catalog errors to HTTP responses.
+func failCatalog(d Deps, w http.ResponseWriter, r *http.Request, err error) {
 	var ve *catalog.ValidationError
 	var ie *imaging.ValidationError
 	var ce *catalog.ConflictError
@@ -205,7 +228,7 @@ func (h productHandlers) fail(w http.ResponseWriter, r *http.Request, err error)
 	case errors.As(err, &ce):
 		writeError(w, http.StatusConflict, "conflict", ce.Reason)
 	default:
-		h.d.Logger.ErrorContext(r.Context(), "request failed", "path", r.URL.Path, "err", err)
+		d.Logger.ErrorContext(r.Context(), "request failed", "path", r.URL.Path, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "something went wrong")
 	}
 }
