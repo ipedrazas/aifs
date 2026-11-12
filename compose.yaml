@@ -1,0 +1,25 @@
+# Local and self-hosted use: `task docker:up`, then open http://localhost:8080.
+services:
+  aifs:
+    image: ${AIFS_IMAGE:-aifs:local}
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+    restart: unless-stopped
+    ports:
+      - "${AIFS_PORT:-8080}:8080"
+    environment:
+      AIFS_LOG_LEVEL: ${AIFS_LOG_LEVEL:-info}
+    volumes:
+      - aifs-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+volumes:
+  aifs-data:

@@ -1,0 +1,15 @@
+# Live reload for `task dev:api`.
+root = "."
+tmp_dir = "../tmp/air"
+
+[build]
+  cmd = "go build -o ../tmp/air/aifs ./cmd/aifs"
+  entrypoint = ["../tmp/air/aifs", "serve"]
+  include_ext = ["go", "sql"]
+  exclude_dir = ["internal/webui/dist"]
+  delay = 300
+  kill_delay = "2s"
+  send_interrupt = true
+
+[log]
+  main_only = true

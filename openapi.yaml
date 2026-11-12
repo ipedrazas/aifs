@@ -1,0 +1,86 @@
+openapi: 3.1.0
+info:
+  title: AI Fashion Studio API
+  version: 0.1.0
+  description: |
+    The contract between the Go API and the React frontend. TypeScript types in
+    `web/src/api/schema.d.ts` are generated from this file with `task generate`;
+    CI fails when they drift.
+servers:
+  - url: /
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness and readiness probe
+      description: Unauthenticated. Returns 503 when the database is unreachable.
+      tags: [system]
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: Unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /api/v1/version:
+    get:
+      operationId: getVersion
+      summary: Server build and schema version
+      tags: [system]
+      responses:
+        "200":
+          description: Version information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Version"
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+    Version:
+      type: object
+      required: [version, commit, schemaVersion]
+      properties:
+        version:
+          type: string
+          examples: ["v0.1.0"]
+        commit:
+          type: string
+        schemaVersion:
+          type: integer
+          description: Highest applied database migration.
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code.
+            message:
+              type: string
+              description: Human-readable message.
