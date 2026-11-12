@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ipedrazas/aifs/api/internal/auth"
 	"github.com/ipedrazas/aifs/api/internal/version"
 )
 
@@ -32,6 +33,11 @@ type Deps struct {
 	}
 	// Web is the built frontend. It may be empty (no index.html).
 	Web fs.FS
+	// Auth checks the password and sessions.
+	Auth *auth.Service
+	// CookieSecure sets the Secure flag (and the __Host- prefix) on the
+	// session cookie.
+	CookieSecure bool
 }
 
 // New returns the root handler.
@@ -40,16 +46,28 @@ func New(d Deps) http.Handler {
 
 	mux.HandleFunc("GET /healthz", health(d))
 
+	sessions := newSessionHandlers(d)
+
+	// Everything under /api/v1 requires a session, except logging in.
 	api := http.NewServeMux()
+	api.HandleFunc("GET /api/v1/session", sessions.get)
+	api.HandleFunc("DELETE /api/v1/session", sessions.logout)
 	api.HandleFunc("GET /api/v1/version", versionInfo(d))
 	api.HandleFunc("/api/v1/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such API route")
 	})
-	mux.Handle("/api/", api)
+
+	mux.HandleFunc("POST /api/v1/session", sessions.login)
+	mux.Handle("/api/", sessions.require(api))
 
 	mux.Handle("/", spa(d.Web))
 
-	return securityHeaders(requestLog(d.Logger, recoverer(d.Logger, mux)))
+	csrf := http.NewCrossOriginProtection()
+	csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusForbidden, "cross_origin", "cross-origin request rejected")
+	}))
+
+	return securityHeaders(requestLog(d.Logger, recoverer(d.Logger, csrf.Handler(mux))))
 }
 
 // HealthResponse is the body of GET /healthz.

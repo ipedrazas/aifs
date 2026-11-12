@@ -17,6 +17,7 @@ vars:
   AIR_VERSION: v1.65.1
   E2E_PORT: '{{.E2E_PORT | default "18080"}}'
   E2E_NAME: aifs-e2e
+  E2E_PASSWORD: e2e-password-123
 
 tasks:
   default:
@@ -52,6 +53,9 @@ tasks:
       AIFS_DATA_DIR: ../tmp/data
       AIFS_ADDR: 127.0.0.1:8080
       AIFS_LOG_LEVEL: debug
+      # Development mode defaults the password to "dev". Plain-HTTP cookie so
+      # every browser accepts it on the Vite dev server.
+      AIFS_COOKIE_SECURE: "false"
     cmds:
       - go run github.com/air-verse/air@{{.AIR_VERSION}}
 
@@ -142,7 +146,7 @@ tasks:
         -t {{.IMAGE}} .
 
   docker:up:
-    desc: Build and start the app with Docker Compose on http://localhost:8080
+    desc: Build and start the app with Docker Compose on http://localhost:8080 (needs AIFS_PASSWORD, e.g. in .env)
     cmds:
       - VERSION={{.VERSION}} COMMIT={{.COMMIT}} docker compose up -d --build --wait
       - docker compose ps
@@ -160,10 +164,10 @@ tasks:
       - task: '{{if eq .SKIP_BUILD "1"}}e2e:noop{{else}}docker:build{{end}}'
       - defer: docker rm -f {{.E2E_NAME}} >/dev/null 2>&1; docker volume rm -f {{.E2E_NAME}}-data >/dev/null 2>&1; true
       - docker rm -f {{.E2E_NAME}} >/dev/null 2>&1 || true
-      - docker run -d --name {{.E2E_NAME}} -p 127.0.0.1:{{.E2E_PORT}}:8080 -v {{.E2E_NAME}}-data:/data {{.IMAGE}}
+      - docker run -d --name {{.E2E_NAME}} -p 127.0.0.1:{{.E2E_PORT}}:8080 -v {{.E2E_NAME}}-data:/data -e AIFS_PASSWORD={{.E2E_PASSWORD}} {{.IMAGE}}
       - ./scripts/wait-healthy.sh {{.E2E_NAME}} 60
       - ./scripts/check-image.sh {{.E2E_NAME}} {{.IMAGE}}
-      - cd web && E2E_BASE_URL=http://127.0.0.1:{{.E2E_PORT}} E2E_EXPECT_VERSION={{.VERSION}} npx playwright test
+      - cd web && E2E_BASE_URL=http://127.0.0.1:{{.E2E_PORT}} E2E_EXPECT_VERSION={{.VERSION}} E2E_PASSWORD={{.E2E_PASSWORD}} npx playwright test
 
   e2e:noop:
     internal: true

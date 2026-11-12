@@ -12,6 +12,10 @@ services:
       - "${AIFS_PORT:-8080}:8080"
     environment:
       AIFS_LOG_LEVEL: ${AIFS_LOG_LEVEL:-info}
+      # Required: set it in the shell or in a .env file next to this file.
+      AIFS_PASSWORD: ${AIFS_PASSWORD:?set AIFS_PASSWORD (at least 12 characters)}
+      # Set to false only when serving over plain HTTP on a non-localhost address.
+      AIFS_COOKIE_SECURE: ${AIFS_COOKIE_SECURE:-true}
     volumes:
       - aifs-data:/data
     read_only: true

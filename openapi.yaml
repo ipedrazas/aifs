@@ -8,6 +8,8 @@ info:
     CI fails when they drift.
 servers:
   - url: /
+security:
+  - session: []
 paths:
   /healthz:
     get:
@@ -15,6 +17,7 @@ paths:
       summary: Liveness and readiness probe
       description: Unauthenticated. Returns 503 when the database is unreachable.
       tags: [system]
+      security: []
       responses:
         "200":
           description: Healthy
@@ -28,6 +31,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+  /api/v1/session:
+    get:
+      operationId: getSession
+      summary: Current session
+      tags: [session]
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      operationId: login
+      summary: Log in with the shared password
+      description: |
+        Sets the session cookie. Attempts are rate limited per client and in
+        total; a limited request gets 429 with `Retry-After`.
+      tags: [session]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in; the session cookie is set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          description: Incorrect password (`invalid_password`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "429":
+          description: Too many attempts (`rate_limited`)
+          headers:
+            Retry-After:
+              description: Seconds until the next attempt is allowed.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: logout
+      summary: Log out
+      tags: [session]
+      responses:
+        "204":
+          description: Logged out; the session cookie is cleared
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
   /api/v1/version:
     get:
       operationId: getVersion
@@ -40,10 +110,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Version"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         default:
           $ref: "#/components/responses/Error"
 components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-aifs_session
+      description: |
+        Set by `POST /api/v1/session`. Named `aifs_session` when the server runs
+        with `AIFS_COOKIE_SECURE=false`.
   responses:
+    Unauthenticated:
+      description: No valid session (`unauthenticated`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CrossOrigin:
+      description: Cross-origin state-changing request rejected (`cross_origin`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Error:
       description: Error
       content:
@@ -51,6 +143,23 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    LoginRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+    Session:
+      type: object
+      required: [authenticated, expiresAt]
+      properties:
+        authenticated:
+          type: boolean
+          const: true
+        expiresAt:
+          type: string
+          format: date-time
     Health:
       type: object
       required: [status]
