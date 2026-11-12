@@ -31,3 +31,13 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+plans/
+
+# Build outputs and local data
+/bin/
+/tmp/
+/data/
+api/internal/webui/dist/*
+!api/internal/webui/dist/.gitkeep
+/.task/
