@@ -44,6 +44,14 @@ func newServerT(t *testing.T, fdb fakeDB, web fstest.MapFS) http.Handler {
 
 func newTestServer(t *testing.T, fdb fakeDB, web fstest.MapFS, maxUpload int64) http.Handler {
 	t.Helper()
+	h, _ := newTestServerDB(t, fdb, web, maxUpload)
+	return h
+}
+
+// newTestServerDB also returns the database, for tests that need to set up
+// state the API cannot create yet.
+func newTestServerDB(t *testing.T, fdb fakeDB, web fstest.MapFS, maxUpload int64) (http.Handler, *db.DB) {
+	t.Helper()
 	dir := t.TempDir()
 	d, err := db.Open(context.Background(), dir)
 	if err != nil {
@@ -64,7 +72,7 @@ func newTestServer(t *testing.T, fdb fakeDB, web fstest.MapFS, maxUpload int64) 
 		Catalog:        catalog.New(d, store, log),
 		Media:          media.New(d, store),
 		MaxUploadBytes: maxUpload,
-	})
+	}), d
 }
 
 func newAuth(t *testing.T, d *db.DB) *auth.Service {

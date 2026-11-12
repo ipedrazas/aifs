@@ -154,6 +154,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List virtual models, newest first */
+        get: operations["listModels"];
+        put?: never;
+        /** Create a virtual model */
+        post: operations["createModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        /** A model (archived or not) with all its reference images */
+        get: operations["getModel"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a model, or archive it if it has been used
+         * @description A model nothing refers to is deleted with its images (204). A model
+         *     that has been used (by a generation or photoshoot) is archived instead
+         *     and returned (200), so the history that used it stays traceable.
+         */
+        delete: operations["deleteModel"];
+        options?: never;
+        head?: never;
+        /** Change model fields, archive or restore */
+        patch: operations["updateModel"];
+        trace?: never;
+    };
+    "/api/v1/models/{id}/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload one reference image of the model
+         * @description Same rules as product photographs; stored unchanged.
+         */
+        post: operations["uploadModelImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{id}/images/{imageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ModelId"];
+                imageId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a model reference image record */
+        delete: operations["deleteModelImage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/blobs/{hash}": {
         parameters: {
             query?: never;
@@ -236,6 +322,65 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        /**
+         * @description `identity`: face and likeness; `full_body`: build and proportions.
+         * @enum {string}
+         */
+        ModelImageRole: "identity" | "full_body";
+        /** @description All fields optional on update; `name` is required on create. */
+        ModelInput: {
+            name?: string;
+            /** @description Descriptive profile. */
+            description?: string;
+            /** @description Appearance attributes. */
+            appearance?: string;
+            preferredPoses?: string;
+            styling?: string;
+            /** @description Update only. `false` restores an archived model. */
+            archived?: boolean;
+        };
+        Model: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            description: string;
+            appearance: string;
+            preferredPoses: string;
+            styling: string;
+            /** @enum {string} */
+            origin: "uploaded" | "generated";
+            archived: boolean;
+            archivedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            imageCount: number;
+            /** @description First identity image, else the first image. */
+            cover: components["schemas"]["ModelImage"] | null;
+            /** @description Present on single-model responses, identity images first. */
+            images?: components["schemas"]["ModelImage"][];
+        };
+        ModelList: {
+            items: components["schemas"]["Model"][];
+        };
+        ModelImage: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            modelId: number;
+            hash: string;
+            role: components["schemas"]["ModelImageRole"];
+            filename: string;
+            /** @enum {string} */
+            contentType: "image/jpeg" | "image/png" | "image/webp";
+            /** Format: int64 */
+            size: number;
+            width: number;
+            height: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
         LoginRequest: {
             password: string;
         };
@@ -300,6 +445,7 @@ export interface components {
     };
     parameters: {
         ProductId: number;
+        ModelId: number;
     };
     requestBodies: never;
     headers: never;
@@ -637,6 +783,201 @@ export interface operations {
             header?: never;
             path: {
                 id: components["parameters"]["ProductId"];
+                imageId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listModels: {
+        parameters: {
+            query?: {
+                /** @description Include archived models. */
+                archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Models with their cover image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    createModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Model"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The model */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Model"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The model was in use and has been archived */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Model"];
+                };
+            };
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+        };
+    };
+    updateModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelInput"];
+            };
+        };
+        responses: {
+            /** @description The updated model */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Model"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    uploadModelImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    role: components["schemas"]["ModelImageRole"];
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Stored */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelImage"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteModelImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ModelId"];
                 imageId: number;
             };
             cookie?: never;

@@ -12,12 +12,20 @@ export function Layout() {
               AI Fashion Studio
             </Link>
             <nav className="flex gap-4 text-sm">
-              <NavLink
-                to="/products"
-                className={({ isActive }) => (isActive ? 'font-medium text-stone-900' : 'text-stone-600 hover:text-stone-900')}
-              >
-                Products
-              </NavLink>
+              {[
+                ['/products', 'Products'],
+                ['/models', 'Models'],
+              ].map(([to, label]) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    isActive ? 'font-medium text-stone-900' : 'text-stone-600 hover:text-stone-900'
+                  }
+                >
+                  {label}
+                </NavLink>
+              ))}
             </nav>
           </div>
           <LogoutButton />

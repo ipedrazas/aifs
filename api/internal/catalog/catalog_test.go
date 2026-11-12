@@ -45,7 +45,7 @@ func TestCreateGetUpdate(t *testing.T) {
 	ctx := context.Background()
 	s, _, _ := setup(t)
 
-	prod, err := s.Create(ctx, Input{Name: p("  Slim jeans "), SKU: p("SJ-001"), Colour: p("indigo"), PrintDetails: p("embroidered back pocket")})
+	prod, err := s.CreateProduct(ctx, ProductInput{Name: p("  Slim jeans "), SKU: p("SJ-001"), Colour: p("indigo"), PrintDetails: p("embroidered back pocket")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestCreateGetUpdate(t *testing.T) {
 		t.Fatalf("created: %+v", prod)
 	}
 
-	up, err := s.Update(ctx, prod.ID, Input{Notes: p("wash before shoot"), SKU: p("")})
+	up, err := s.UpdateProduct(ctx, prod.ID, ProductInput{Notes: p("wash before shoot"), SKU: p("")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,10 +64,10 @@ func TestCreateGetUpdate(t *testing.T) {
 		t.Fatal("updated_at went backwards")
 	}
 
-	if _, err := s.Get(ctx, 999); !errors.Is(err, ErrNotFound) {
+	if _, err := s.GetProduct(ctx, 999); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
-	if _, err := s.Update(ctx, 999, Input{Notes: p("x")}); !errors.Is(err, ErrNotFound) {
+	if _, err := s.UpdateProduct(ctx, 999, ProductInput{Notes: p("x")}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("update missing: %v", err)
 	}
 }
@@ -77,19 +77,19 @@ func TestValidation(t *testing.T) {
 	s, _, _ := setup(t)
 	var ve *ValidationError
 
-	for name, in := range map[string]Input{
+	for name, in := range map[string]ProductInput{
 		"no name":    {},
 		"blank name": {Name: p("   ")},
 		"long name":  {Name: p(strings.Repeat("x", 201))},
 		"long sku":   {Name: p("ok"), SKU: p(strings.Repeat("x", 65))},
 	} {
-		if _, err := s.Create(ctx, in); !errors.As(err, &ve) {
+		if _, err := s.CreateProduct(ctx, in); !errors.As(err, &ve) {
 			t.Errorf("%s: got %v", name, err)
 		}
 	}
 
-	prod, _ := s.Create(ctx, Input{Name: p("ok")})
-	if _, err := s.Update(ctx, prod.ID, Input{Name: p("")}); !errors.As(err, &ve) {
+	prod, _ := s.CreateProduct(ctx, ProductInput{Name: p("ok")})
+	if _, err := s.UpdateProduct(ctx, prod.ID, ProductInput{Name: p("")}); !errors.As(err, &ve) {
 		t.Errorf("clearing name: %v", err)
 	}
 }
@@ -97,16 +97,16 @@ func TestValidation(t *testing.T) {
 func TestSKUIsUniqueCaseInsensitive(t *testing.T) {
 	ctx := context.Background()
 	s, _, _ := setup(t)
-	if _, err := s.Create(ctx, Input{Name: p("a"), SKU: p("ABC")}); err != nil {
+	if _, err := s.CreateProduct(ctx, ProductInput{Name: p("a"), SKU: p("ABC")}); err != nil {
 		t.Fatal(err)
 	}
 	var ce *ConflictError
-	if _, err := s.Create(ctx, Input{Name: p("b"), SKU: p("abc")}); !errors.As(err, &ce) {
+	if _, err := s.CreateProduct(ctx, ProductInput{Name: p("b"), SKU: p("abc")}); !errors.As(err, &ce) {
 		t.Fatalf("duplicate sku: %v", err)
 	}
 	// Several products without an identifier are fine.
 	for range 2 {
-		if _, err := s.Create(ctx, Input{Name: p("no sku")}); err != nil {
+		if _, err := s.CreateProduct(ctx, ProductInput{Name: p("no sku")}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -115,10 +115,10 @@ func TestSKUIsUniqueCaseInsensitive(t *testing.T) {
 func TestAddImageStoresExactBytes(t *testing.T) {
 	ctx := context.Background()
 	s, _, store := setup(t)
-	prod, _ := s.Create(ctx, Input{Name: p("jeans")})
+	prod, _ := s.CreateProduct(ctx, ProductInput{Name: p("jeans")})
 	data := fixture(t, "rot6.jpg")
 
-	im, err := s.AddImage(ctx, prod.ID, "back", `C:\photos\back.jpg`, data)
+	im, err := s.AddProductImage(ctx, prod.ID, "back", `C:\photos\back.jpg`, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestAddImageStoresExactBytes(t *testing.T) {
 		t.Fatal("stored bytes differ from upload")
 	}
 
-	full, _ := s.Get(ctx, prod.ID)
+	full, _ := s.GetProduct(ctx, prod.ID)
 	if full.ImageCount != 1 || len(full.Images) != 1 || full.Cover == nil || full.Cover.ID != im.ID {
 		t.Fatalf("product: %+v", full)
 	}
@@ -146,27 +146,27 @@ func TestAddImageStoresExactBytes(t *testing.T) {
 func TestAddImageRejects(t *testing.T) {
 	ctx := context.Background()
 	s, _, _ := setup(t)
-	prod, _ := s.Create(ctx, Input{Name: p("jeans")})
+	prod, _ := s.CreateProduct(ctx, ProductInput{Name: p("jeans")})
 
 	var ve *ValidationError
-	if _, err := s.AddImage(ctx, prod.ID, "top", "x.jpg", fixture(t, "plain.jpg")); !errors.As(err, &ve) {
+	if _, err := s.AddProductImage(ctx, prod.ID, "top", "x.jpg", fixture(t, "plain.jpg")); !errors.As(err, &ve) {
 		t.Errorf("bad view: %v", err)
 	}
 	var ie *imaging.ValidationError
 	for _, f := range []string{"plain.gif", "text.jpg", "truncated.jpg"} {
-		if _, err := s.AddImage(ctx, prod.ID, "front", f, fixture(t, f)); !errors.As(err, &ie) {
+		if _, err := s.AddProductImage(ctx, prod.ID, "front", f, fixture(t, f)); !errors.As(err, &ie) {
 			t.Errorf("%s: %v", f, err)
 		}
 	}
-	if _, err := s.AddImage(ctx, 999, "front", "x.jpg", fixture(t, "plain.jpg")); !errors.Is(err, ErrNotFound) {
+	if _, err := s.AddProductImage(ctx, 999, "front", "x.jpg", fixture(t, "plain.jpg")); !errors.Is(err, ErrNotFound) {
 		t.Errorf("missing product: %v", err)
 	}
 
-	if _, err := s.AddImage(ctx, prod.ID, "front", "a.jpg", fixture(t, "plain.jpg")); err != nil {
+	if _, err := s.AddProductImage(ctx, prod.ID, "front", "a.jpg", fixture(t, "plain.jpg")); err != nil {
 		t.Fatal(err)
 	}
 	var ce *ConflictError
-	if _, err := s.AddImage(ctx, prod.ID, "back", "a.jpg", fixture(t, "plain.jpg")); !errors.As(err, &ce) {
+	if _, err := s.AddProductImage(ctx, prod.ID, "back", "a.jpg", fixture(t, "plain.jpg")); !errors.As(err, &ce) {
 		t.Errorf("duplicate photo: %v", err)
 	}
 }
@@ -174,8 +174,8 @@ func TestAddImageRejects(t *testing.T) {
 func TestImagesAreImmutableInTheDatabase(t *testing.T) {
 	ctx := context.Background()
 	s, d, _ := setup(t)
-	prod, _ := s.Create(ctx, Input{Name: p("jeans")})
-	im, _ := s.AddImage(ctx, prod.ID, "front", "a.jpg", fixture(t, "plain.jpg"))
+	prod, _ := s.CreateProduct(ctx, ProductInput{Name: p("jeans")})
+	im, _ := s.AddProductImage(ctx, prod.ID, "front", "a.jpg", fixture(t, "plain.jpg"))
 
 	for _, q := range []string{
 		`UPDATE product_image SET view = 'back' WHERE id = ?`,
@@ -193,12 +193,12 @@ func TestImagesAreImmutableInTheDatabase(t *testing.T) {
 func TestDeleteImageCollectsUnreferencedBytes(t *testing.T) {
 	ctx := context.Background()
 	s, _, store := setup(t)
-	a, _ := s.Create(ctx, Input{Name: p("a")})
-	b, _ := s.Create(ctx, Input{Name: p("b")})
+	a, _ := s.CreateProduct(ctx, ProductInput{Name: p("a")})
+	b, _ := s.CreateProduct(ctx, ProductInput{Name: p("b")})
 	data := fixture(t, "plain.png")
 
-	imA, _ := s.AddImage(ctx, a.ID, "front", "x.png", data)
-	imB, err := s.AddImage(ctx, b.ID, "front", "x.png", data)
+	imA, _ := s.AddProductImage(ctx, a.ID, "front", "x.png", data)
+	imB, err := s.AddProductImage(ctx, b.ID, "front", "x.png", data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestDeleteImageCollectsUnreferencedBytes(t *testing.T) {
 	}
 
 	// Still used by product b: bytes stay.
-	if err := s.DeleteImage(ctx, a.ID, imA.ID); err != nil {
+	if err := s.DeleteProductImage(ctx, a.ID, imA.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Open(ctx, blob.Original, imA.Hash); err != nil {
@@ -215,12 +215,12 @@ func TestDeleteImageCollectsUnreferencedBytes(t *testing.T) {
 	}
 
 	// Wrong product id: not found, nothing removed.
-	if err := s.DeleteImage(ctx, a.ID, imB.ID); !errors.Is(err, ErrNotFound) {
+	if err := s.DeleteProductImage(ctx, a.ID, imB.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-product delete: %v", err)
 	}
 
 	// Last reference gone: bytes and thumbnails go too.
-	if err := s.Delete(ctx, b.ID); err != nil {
+	if err := s.DeleteProduct(ctx, b.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Open(ctx, blob.Original, imA.Hash); !errors.Is(err, blob.ErrNotFound) {
@@ -229,10 +229,10 @@ func TestDeleteImageCollectsUnreferencedBytes(t *testing.T) {
 	if _, err := store.OpenDerived(ctx, imA.Hash, "w256.jpg"); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatalf("orphan thumbnail kept: %v", err)
 	}
-	if _, err := s.Get(ctx, b.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.GetProduct(ctx, b.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatal("product survived delete")
 	}
-	if err := s.Delete(ctx, b.ID); !errors.Is(err, ErrNotFound) {
+	if err := s.DeleteProduct(ctx, b.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second delete: %v", err)
 	}
 }
@@ -240,12 +240,12 @@ func TestDeleteImageCollectsUnreferencedBytes(t *testing.T) {
 func TestListCovers(t *testing.T) {
 	ctx := context.Background()
 	s, _, _ := setup(t)
-	a, _ := s.Create(ctx, Input{Name: p("a")})
-	_, _ = s.Create(ctx, Input{Name: p("empty")})
-	_, _ = s.AddImage(ctx, a.ID, "detail", "d.jpg", fixture(t, "plain.jpg"))
-	front, _ := s.AddImage(ctx, a.ID, "front", "f.png", fixture(t, "plain.png"))
+	a, _ := s.CreateProduct(ctx, ProductInput{Name: p("a")})
+	_, _ = s.CreateProduct(ctx, ProductInput{Name: p("empty")})
+	_, _ = s.AddProductImage(ctx, a.ID, "detail", "d.jpg", fixture(t, "plain.jpg"))
+	front, _ := s.AddProductImage(ctx, a.ID, "front", "f.png", fixture(t, "plain.png"))
 
-	list, err := s.List(ctx)
+	list, err := s.ListProducts(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
