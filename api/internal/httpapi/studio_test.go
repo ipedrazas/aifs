@@ -57,7 +57,8 @@ func TestGenerationFlow(t *testing.T) {
 		t.Fatalf("start: %d %s", rec.Code, rec.Body)
 	}
 	g := decode[studio.Generation](t, rec)
-	if g.Status != "queued" {
+	// Returned at once: queued, or already claimed by the runner.
+	if g.Status != "queued" && g.Status != "running" {
 		t.Fatalf("not queued: %s", g.Status)
 	}
 
