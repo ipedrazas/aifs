@@ -48,6 +48,9 @@ type Request struct {
 	Source      *Image // the image to dress (try_on) or change (edit)
 	AspectRatio string // e.g. "3:4"
 	Seed        int64
+	// GarmentCategory is the product category the user entered (e.g.
+	// "jeans"); providers may map it to their own garment types.
+	GarmentCategory string
 }
 
 // Status of a provider job.
@@ -130,16 +133,31 @@ func Supports(p Provider, c Capability) bool {
 	return false
 }
 
-// Registry holds the configured providers and their unit prices.
+// Registry holds the configured providers and their unit prices, plus
+// known providers that are not configured (so the UI can say why).
 type Registry struct {
-	providers map[string]Provider
-	prices    map[string]int64 // micro-USD per call, by provider name
+	providers   map[string]Provider
+	prices      map[string]int64 // micro-USD per call, by provider name
+	unavailable []Unavailable
+}
+
+// Unavailable describes a known provider that is not configured.
+type Unavailable struct {
+	Name   string
+	Label  string
+	Reason string
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{providers: map[string]Provider{}, prices: map[string]int64{}}
 }
+
+// AddUnavailable records a known provider that cannot be used, and why.
+func (r *Registry) AddUnavailable(u Unavailable) { r.unavailable = append(r.unavailable, u) }
+
+// Unavailable lists known providers that are not configured.
+func (r *Registry) Unavailable() []Unavailable { return r.unavailable }
 
 // Add registers a provider with its fallback unit price per call.
 func (r *Registry) Add(p Provider, unitPriceMicros int64) {

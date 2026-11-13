@@ -141,9 +141,20 @@ func TestProvidersEndpoint(t *testing.T) {
 	h := newServerT(t, fakeDB{}, webFS)
 	c := login(t, h)
 	resp := decode[ProvidersResponse](t, do(t, h, http.MethodGet, "/api/v1/providers", c))
-	if resp.MaxVariations != 4 || len(resp.Providers) != 1 || resp.Providers[0].Name != "fake" ||
-		len(resp.Providers[0].Recipes) != 2 || len(resp.Recipes) != 2 {
+	if resp.MaxVariations != 4 || len(resp.Providers) != 2 || resp.Providers[0].Name != "fake" || !resp.Providers[0].Available ||
+		len(resp.Providers[0].Recipes) != 3 || len(resp.Recipes) != 3 {
 		t.Fatalf("providers: %+v", resp)
+	}
+	if u := resp.Providers[1]; u.Name != "fashn" || u.Available || u.Reason == "" || len(u.Recipes) != 0 {
+		t.Fatalf("unavailable provider: %+v", u)
+	}
+
+	// An unavailable provider cannot be selected.
+	ps := shootFixture(t, h, c, "")
+	rec := doBody(t, h, http.MethodPost, "/api/v1/photoshoots/"+strconv.FormatInt(ps.ID, 10)+"/generations",
+		`{"recipe":"tryon-photo","provider":"fashn","variations":1}`, c)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "not configured") {
+		t.Fatalf("unavailable provider accepted: %d %s", rec.Code, rec.Body)
 	}
 }
 

@@ -619,6 +619,12 @@ export interface components {
             provider: string;
             /** @description Capped by `AIFS_MAX_VARIATIONS` (see `maxVariations` in `GET /api/v1/providers`). */
             variations: number;
+            /**
+             * Format: int64
+             * @description A photograph of the photoshoot's product to send first (and alone,
+             *     for try-on steps). Defaults to the front view.
+             */
+            garmentImageId?: number;
         };
         /** @enum {string} */
         GenerationStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -673,6 +679,8 @@ export interface components {
                 /** @description Positions in `inputs` sent with this step. */
                 inputs: number[];
                 usesPrevious: boolean;
+                /** @description Position in `inputs` of the photograph a try-on step dresses; 0 when none. */
+                source: number;
             }[];
             inputs: components["schemas"]["GenerationInput"][];
         };
@@ -787,11 +795,18 @@ export interface components {
             providers: {
                 name: string;
                 label: string;
+                /** @description False for a known provider that is not configured; it cannot be selected. */
+                available: boolean;
+                /** @description What is missing when unavailable. */
+                reason: string;
                 capabilities: string[];
                 models: {
                     [key: string]: string;
                 };
-                /** Format: int64 */
+                /**
+                 * Format: int64
+                 * @description Expected cost of one call, used for estimates.
+                 */
                 unitPriceMicros: number;
                 /** @description Recipes this provider can run on its own. */
                 recipes: string[];

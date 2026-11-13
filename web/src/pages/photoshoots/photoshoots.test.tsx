@@ -14,14 +14,27 @@ const providers = {
       {
         name: 'fake',
         label: 'Fake',
+        available: true,
+        reason: '',
         capabilities: ['reference_generate', 'try_on'],
         models: {},
         unitPriceMicros: 10_000,
-        recipes: ['reference', 'tryon'],
+        recipes: ['reference', 'tryon-photo', 'tryon'],
+      },
+      {
+        name: 'fashn',
+        label: 'FASHN virtual try-on',
+        available: false,
+        reason: 'set AIFS_FASHN_API_KEY to enable it',
+        capabilities: [],
+        models: {},
+        unitPriceMicros: 0,
+        recipes: [],
       },
     ],
     recipes: [
       { name: 'reference', label: 'Reference-guided', description: 'one call', steps: [{ capability: 'reference_generate', purpose: 'photograph' }] },
+      { name: 'tryon-photo', label: 'Try-on on photo', description: 'one call', steps: [{ capability: 'try_on', purpose: 'try-on' }] },
       { name: 'tryon', label: 'Try-on', description: 'two calls', steps: [{ capability: 'reference_generate', purpose: 'scene' }, { capability: 'try_on', purpose: 'try-on' }] },
     ],
   },
@@ -36,7 +49,7 @@ const snapshot = {
   photoshoot: { id: 5, name: 'Jeans on Ava' },
   product: { id: 1, name: 'Jeans', sku: 'J-1', category: 'jeans', colour: '', printDetails: '' },
   model: { id: 2, name: 'Ava', appearance: '', preferredPoses: '', styling: '' },
-  steps: [{ position: 1, capability: 'reference_generate', purpose: 'photograph', provider: 'fake', providerModel: 'fake-v1', prompt: 'p', inputs: [1, 2], usesPrevious: false }],
+  steps: [{ position: 1, capability: 'reference_generate', purpose: 'photograph', provider: 'fake', providerModel: 'fake-v1', prompt: 'p', inputs: [1, 2], usesPrevious: false, source: 0 }],
   inputs: [
     { position: 1, role: 'garment', label: 'front', hash: 'a'.repeat(64) },
     { position: 2, role: 'model', label: 'identity', hash: 'b'.repeat(64) },
@@ -99,6 +112,26 @@ function photoshoot(generations: unknown[]) {
   }
 }
 
+const productBody = {
+  id: 1,
+  name: 'Jeans',
+  sku: 'J-1',
+  category: 'jeans',
+  description: '',
+  colour: '',
+  printDetails: '',
+  notes: '',
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
+  imageCount: 2,
+  cover: null,
+  images: [
+    { id: 11, productId: 1, hash: 'a'.repeat(64), view: 'front', filename: 'f.jpg', contentType: 'image/jpeg', size: 1, width: 1, height: 1, createdAt: '' },
+    { id: 12, productId: 1, hash: 'c'.repeat(64), view: 'back', filename: 'b.jpg', contentType: 'image/jpeg', size: 1, width: 1, height: 1, createdAt: '' },
+  ],
+}
+const productMock = { status: 200, body: productBody }
+
 function visit(path: string) {
   window.history.pushState({}, '', path)
   return render(<App />)
@@ -115,6 +148,7 @@ describe('photoshoot generation', () => {
       'GET /api/v1/session': loggedIn,
       'GET /api/v1/version': version,
       'GET /api/v1/providers': providers,
+      'GET /api/v1/products/1': productMock,
       'GET /api/v1/photoshoots/5': () => ({ status: 200, body: states[Math.min(calls++, states.length - 1)] }),
       'GET /api/v1/photoshoots': { status: 200, body: { items: [] } },
       'GET /api/v1/images': { status: 200, body: { items: [] } },
@@ -148,6 +182,7 @@ describe('photoshoot generation', () => {
       'GET /api/v1/session': loggedIn,
       'GET /api/v1/version': version,
       'GET /api/v1/providers': providers,
+      'GET /api/v1/products/1': productMock,
       'GET /api/v1/photoshoots/5': () => ({
         status: 200,
         body: photoshoot([cancelled ? generation('cancelled', 0) : generation('running', 0)]),
@@ -162,6 +197,38 @@ describe('photoshoot generation', () => {
     await user.click(await screen.findByRole('button', { name: 'Cancel' }))
     await user.click(screen.getByRole('button', { name: 'Cancel generation' }))
     await waitFor(() => expect(screen.getByTestId('generation')).toHaveAttribute('data-status', 'cancelled'))
+  })
+})
+
+describe('try-on options', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('offers the garment photograph and shows unavailable providers as disabled', async () => {
+    let sent: unknown
+    mockApi({
+      'GET /api/v1/session': loggedIn,
+      'GET /api/v1/version': version,
+      'GET /api/v1/providers': providers,
+      'GET /api/v1/products/1': productMock,
+      'GET /api/v1/photoshoots/5': { status: 200, body: photoshoot([]) },
+      'GET /api/v1/photoshoots': { status: 200, body: { items: [] } },
+      'GET /api/v1/images': { status: 200, body: { items: [] } },
+      'POST /api/v1/photoshoots/5/generations': async (req) => {
+        sent = await req.json()
+        return { status: 202, body: generation('queued', 0) }
+      },
+    })
+    const user = userEvent.setup()
+    visit('/photoshoots/5')
+
+    const fashn = await screen.findByRole('option', { name: /FASHN virtual try-on — set AIFS_FASHN_API_KEY/ })
+    expect(fashn).toBeDisabled()
+    expect(screen.queryByLabelText('Garment photograph')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Recipe'), 'tryon-photo')
+    await user.selectOptions(await screen.findByLabelText('Garment photograph'), '12')
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await waitFor(() => expect(sent).toEqual({ recipe: 'tryon-photo', provider: 'fake', variations: 2, garmentImageId: 12 }))
   })
 })
 

@@ -116,6 +116,12 @@ tasks:
     cmds:
       - npm test
 
+  test:live:fashn:
+    desc: Run one real FASHN try-on (spends credits; needs AIFS_FASHN_API_KEY)
+    dir: api
+    cmds:
+      - go test -tags live -run TestLive -count=1 -v ./internal/provider/fashn/
+
   vulncheck:
     desc: Check Go dependencies for known vulnerabilities
     dir: api

@@ -29,6 +29,9 @@ type StepSpec struct {
 	GarmentLimit int
 	UsesModel    bool
 	UsesPrevious bool
+	// SourceFromModel sends the model's own photograph (full body first) as
+	// the image to dress.
+	SourceFromModel bool
 	// Prompt builds the step's prompt.
 	Prompt func(PromptInput) string
 }
@@ -54,6 +57,19 @@ var Recipes = []Recipe{
 		}},
 	},
 	{
+		Name:        "tryon-photo",
+		Label:       "Virtual try-on on the model's photograph",
+		Description: "Dress the model's own full-body photograph with the garment photograph; pose, setting and light come from that photograph (approach A).",
+		Steps: []StepSpec{{
+			Capability:      provider.TryOn,
+			Purpose:         "try-on",
+			UsesGarments:    true,
+			GarmentLimit:    1,
+			SourceFromModel: true,
+			Prompt:          tryOnPrompt,
+		}},
+	},
+	{
 		Name:        "tryon",
 		Label:       "Scene, then virtual try-on",
 		Description: "Generate the model in the scene, then dress them with the garment photograph (approach A).",
@@ -70,7 +86,7 @@ var Recipes = []Recipe{
 				UsesGarments: true,
 				GarmentLimit: 1,
 				UsesPrevious: true,
-				Prompt:       func(PromptInput) string { return "" },
+				Prompt:       tryOnPrompt,
 			},
 		},
 	},
@@ -147,6 +163,10 @@ func referencePrompt(in PromptInput) string {
 	b.WriteString(line("Additional instructions", in.CustomInstructions))
 	return strings.TrimSpace(b.String())
 }
+
+// tryOnPrompt is only the user's own instructions (e.g. "tuck in the
+// shirt"): try-on models take the garment from its photograph.
+func tryOnPrompt(in PromptInput) string { return strings.TrimSpace(in.CustomInstructions) }
 
 func scenePrompt(in PromptInput) string {
 	var b strings.Builder
