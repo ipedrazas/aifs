@@ -66,6 +66,11 @@ All configuration comes from environment variables.
 | `AIFS_STEP_TIMEOUT` | `10m` | Hard limit for one provider call, including retries |
 | `AIFS_FAKE_PROVIDER` | `true` in development, else `false` | Enable the offline fake provider (deterministic placeholder images, no cost) |
 | `AIFS_FAKE_DELAY` | `2s` | How long each fake provider job takes |
+| `AIFS_FASHN_API_KEY` | | Enables the FASHN virtual try-on provider (or `AIFS_FASHN_API_KEY_FILE`). Get a key at https://app.fashn.ai/api |
+| `AIFS_FASHN_MODEL` | `tryon-max` | `tryon-max` (FASHN's recommended model) or `tryon-v1.6` (stable, cheaper) |
+| `AIFS_FASHN_RESOLUTION` | `2k` | `tryon-max` output: `1k`, `2k` or `4k` |
+| `AIFS_FASHN_MODE` | `balanced` | `fast`, `balanced` or `quality` |
+| `AIFS_FASHN_CREDIT_PRICE_USD` | `0.075` | Price of one FASHN credit, for cost estimates and records |
 | `AIFS_COOKIE_SECURE` | `true` | Mark the session cookie `Secure`. Set `false` only when serving over plain HTTP on a non-localhost address |
 
 ## Data
@@ -76,7 +81,12 @@ Everything lives under `AIFS_DATA_DIR`: the SQLite database (`aifs.db`) and imag
 
 A photoshoot pairs a product with a model. Generating from it queues a job and returns at once; the page shows images as they arrive. Every generation stores a complete snapshot (recipe, provider, provider model versions, prompt, settings and the hashes of every reference photograph sent), and its records are never deleted. The queue lives in the database: after a restart, unfinished generations resume from their stored provider job ids, and at most one image per variation can be recorded.
 
-Recipes combine provider calls: `reference` sends garment photographs, model references and the scene prompt in one call; `tryon` first generates the model in the scene and then dresses them with the garment photograph. Real providers arrive in later releases; until then only the fake provider is available, and only when enabled.
+Recipes combine provider calls: `reference` sends garment photographs, model references and the scene prompt in one call; `tryon` first generates the model in the scene and then dresses them with the garment photograph. Providers:
+
+- **FASHN** (virtual try-on) runs the `tryon-photo` recipe: it dresses the model's own full-body photograph with one garment photograph (chosen per generation, front by default). The cost FASHN reports per job is recorded. `tryon-max` at 2k/balanced costs 3 credits ($0.225) per image.
+- **Fake** (offline, no cost) runs every recipe; enable it with `AIFS_FAKE_PROVIDER=true`.
+
+Provider tests replay recorded responses; CI never calls a real provider. To check FASHN against the live API (spends credits): `AIFS_FASHN_API_KEY=... task test:live:fashn`.
 
 ## Review
 

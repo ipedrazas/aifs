@@ -83,6 +83,10 @@ type SnapshotStep struct {
 	// Inputs are positions in Snapshot.Inputs sent with this step.
 	Inputs       []int `json:"inputs"`
 	UsesPrevious bool  `json:"usesPrevious"`
+	// Source is the position in Snapshot.Inputs of the photograph dressed
+	// by a try-on step (0 when the step dresses the previous step's output
+	// or has no source).
+	Source int `json:"source"`
 }
 
 // GenerationInput is a reference photograph sent to the provider.
@@ -162,6 +166,9 @@ type GenerationRequest struct {
 	Recipe     string `json:"recipe"`
 	Provider   string `json:"provider"`
 	Variations int    `json:"variations"`
+	// GarmentImageID optionally chooses the product photograph sent first
+	// (and alone, for try-on). Defaults to the front view.
+	GarmentImageID int64 `json:"garmentImageId"`
 }
 
 // StartGeneration validates a request, plans every step and queues it. It
@@ -195,6 +202,20 @@ func (s *Service) StartGeneration(ctx context.Context, photoshootID int64, req G
 	}
 	if len(model.Images) == 0 {
 		return Generation{}, invalid("modelId", "the model has no reference images yet")
+	}
+	if req.GarmentImageID != 0 {
+		idx := -1
+		for i, im := range prod.Images {
+			if im.ID == req.GarmentImageID {
+				idx = i
+			}
+		}
+		if idx < 0 {
+			return Generation{}, invalid("garmentImageId", "not a photograph of this product")
+		}
+		// Move the chosen photograph to the front, keeping the others' order.
+		chosen := prod.Images[idx]
+		prod.Images = append([]catalog.ProductImage{chosen}, append(prod.Images[:idx:idx], prod.Images[idx+1:]...)...)
 	}
 
 	snap := s.plan(recipe, prov, ps, prod, model, req.Variations)
@@ -307,7 +328,18 @@ func (s *Service) plan(recipe Recipe, prov provider.Provider, ps Photoshoot, pro
 		if spec.UsesModel {
 			inputs = append(inputs, models...)
 		}
+		source := 0
+		if spec.SourceFromModel {
+			source = models[0]
+			for _, pos := range models {
+				if snap.Inputs[pos-1].Label == "full_body" {
+					source = pos
+					break
+				}
+			}
+		}
 		snap.Steps = append(snap.Steps, SnapshotStep{
+			Source:        source,
 			Position:      i + 1,
 			Capability:    string(spec.Capability),
 			Purpose:       spec.Purpose,
@@ -327,6 +359,7 @@ type stepRequest struct {
 	Prompt       string `json:"prompt"`
 	Inputs       []int  `json:"inputs"`
 	UsesPrevious bool   `json:"usesPrevious"`
+	Source       int    `json:"source"`
 	Seed         int64  `json:"seed"`
 }
 
@@ -335,6 +368,7 @@ func stepRequestJSON(generationID int64, variation int, st SnapshotStep) string 
 		Prompt:       st.Prompt,
 		Inputs:       st.Inputs,
 		UsesPrevious: st.UsesPrevious,
+		Source:       st.Source,
 		Seed:         seed(generationID, variation),
 	})
 	return string(b)

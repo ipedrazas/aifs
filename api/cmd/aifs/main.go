@@ -29,6 +29,7 @@ import (
 	"github.com/ipedrazas/aifs/api/internal/media"
 	"github.com/ipedrazas/aifs/api/internal/provider"
 	"github.com/ipedrazas/aifs/api/internal/provider/fake"
+	"github.com/ipedrazas/aifs/api/internal/provider/fashn"
 	"github.com/ipedrazas/aifs/api/internal/studio"
 	"github.com/ipedrazas/aifs/api/internal/version"
 	"github.com/ipedrazas/aifs/api/internal/webui"
@@ -119,6 +120,26 @@ func serve() error {
 		providers.Add(fake.New(cfg.FakeDelay), fake.CostMicros)
 		log.Info("fake provider enabled", "delay", cfg.FakeDelay)
 	}
+	if cfg.FASHN.APIKey != "" {
+		fp, err := fashn.New(fashn.Config{
+			APIKey:            cfg.FASHN.APIKey,
+			Model:             cfg.FASHN.Model,
+			Resolution:        cfg.FASHN.Resolution,
+			Mode:              cfg.FASHN.Mode,
+			CreditPriceMicros: cfg.FASHN.CreditPriceMicros,
+			BaseURL:           cfg.FASHN.BaseURL,
+		})
+		if err != nil {
+			return err
+		}
+		providers.Add(fp, fp.UnitPriceMicros())
+		log.Info("FASHN provider enabled", "model", fp.Model(provider.TryOn), "credits_per_call", fp.CreditsPerCall())
+	} else {
+		providers.AddUnavailable(provider.Unavailable{
+			Name: fashn.Name, Label: "FASHN virtual try-on", Reason: "set AIFS_FASHN_API_KEY to enable it",
+		})
+	}
+
 	runner := studio.NewRunner(database, blobs, providers, log, studio.RunnerConfig{
 		Workers:     cfg.Workers,
 		StepTimeout: cfg.StepTimeout,

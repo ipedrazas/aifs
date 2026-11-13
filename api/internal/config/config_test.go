@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,11 +90,32 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		"vars":   {"AIFS_MAX_VARIATIONS": "50"},
 		"fake":   {"AIFS_FAKE_PROVIDER": "maybe"},
 		"delay":  {"AIFS_FAKE_DELAY": "soon"},
+		"price":  {"AIFS_FASHN_CREDIT_PRICE_USD": "cheap"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Load(env(m)); err == nil {
 				t.Fatal("expected an error")
 			}
 		})
+	}
+}
+
+func TestFASHNConfig(t *testing.T) {
+	c, err := Load(env(map[string]string{"AIFS_FASHN_API_KEY": "secret-key", "AIFS_FASHN_MODEL": "tryon-v1.6"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.FASHN.APIKey != "secret-key" || c.FASHN.Model != "tryon-v1.6" || c.FASHN.CreditPriceMicros != 75_000 {
+		t.Fatalf("fashn: %+v", c.FASHN)
+	}
+	if s := c.FASHN.String(); strings.Contains(s, "secret-key") {
+		t.Fatalf("key printed: %s", s)
+	}
+
+	f := filepath.Join(t.TempDir(), "key")
+	_ = os.WriteFile(f, []byte("from-file\n"), 0o600)
+	c, err = Load(env(map[string]string{"AIFS_FASHN_API_KEY_FILE": f}))
+	if err != nil || c.FASHN.APIKey != "from-file" {
+		t.Fatalf("key file: %q %v", c.FASHN.APIKey, err)
 	}
 }

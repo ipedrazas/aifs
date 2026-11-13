@@ -19,6 +19,14 @@ export function ImageDetailPage() {
   }
 
   const s = im.settings
+  const usage = (pos: number) => {
+    const uses: string[] = []
+    for (const st of s.steps) {
+      if (st.source === pos) uses.push(`dressed by ${st.purpose}`)
+      else if (st.inputs.includes(pos)) uses.push(`sent to ${st.purpose}`)
+    }
+    return uses.join(', ')
+  }
   const first = im.steps[0]
   const last = im.steps[im.steps.length - 1]
 
@@ -91,6 +99,7 @@ export function ImageDetailPage() {
                   <p className="text-xs text-stone-500">
                     {input.role} · {input.label}
                   </p>
+                  {usage(input.position) && <p className="text-[10px] text-stone-400">{usage(input.position)}</p>}
                 </li>
               ))}
             </ul>
