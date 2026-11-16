@@ -50,6 +50,26 @@ type Config struct {
 	FakeProvider bool
 	// FakeDelay is how long each fake provider job takes.
 	FakeDelay time.Duration
+
+	// FASHN is the virtual try-on provider; enabled when the key is set.
+	FASHN FASHNConfig
+}
+
+// FASHNConfig configures the FASHN provider.
+type FASHNConfig struct {
+	APIKey string
+	// Model, Resolution and Mode are validated by the adapter.
+	Model      string
+	Resolution string
+	Mode       string
+	// CreditPriceMicros is the price of one credit in micro-USD.
+	CreditPriceMicros int64
+	BaseURL           string
+}
+
+// String never prints the key.
+func (f FASHNConfig) String() string {
+	return fmt.Sprintf("{model:%s resolution:%s mode:%s key-set:%v}", f.Model, f.Resolution, f.Mode, f.APIKey != "")
 }
 
 // DevPassword is used in development mode when no password is configured.
@@ -128,7 +148,37 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 
+	if c.FASHN.APIKey, err = secretEnv(getenv, "AIFS_FASHN_API_KEY"); err != nil {
+		return Config{}, err
+	}
+	c.FASHN.Model = getenv("AIFS_FASHN_MODEL")
+	c.FASHN.Resolution = getenv("AIFS_FASHN_RESOLUTION")
+	c.FASHN.Mode = getenv("AIFS_FASHN_MODE")
+	c.FASHN.BaseURL = getenv("AIFS_FASHN_BASE_URL")
+	price, err := strconv.ParseFloat(valueOr(getenv("AIFS_FASHN_CREDIT_PRICE_USD"), "0.075"), 64)
+	if err != nil || price < 0 {
+		return Config{}, fmt.Errorf("AIFS_FASHN_CREDIT_PRICE_USD must be a non-negative number, got %q", getenv("AIFS_FASHN_CREDIT_PRICE_USD"))
+	}
+	c.FASHN.CreditPriceMicros = int64(price*1_000_000 + 0.5)
+
 	return c, nil
+}
+
+// secretEnv reads KEY, or the file named by KEY_FILE (Docker secrets).
+func secretEnv(getenv func(string) string, key string) (string, error) {
+	v := getenv(key)
+	file := getenv(key + "_FILE")
+	if file == "" {
+		return v, nil
+	}
+	if v != "" {
+		return "", fmt.Errorf("set %s or %s_FILE, not both", key, key)
+	}
+	b, err := os.ReadFile(file) //nolint:gosec // path comes from the operator
+	if err != nil {
+		return "", fmt.Errorf("%s_FILE: %w", key, err)
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 func intEnv(getenv func(string) string, key string, def, lo, hi int) (int, error) {

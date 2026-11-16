@@ -190,8 +190,12 @@ func (h studioHandlers) reviewImage(w http.ResponseWriter, r *http.Request) {
 
 // ProviderInfo describes a configured provider.
 type ProviderInfo struct {
-	Name            string            `json:"name"`
-	Label           string            `json:"label"`
+	Name  string `json:"name"`
+	Label string `json:"label"`
+	// Available is false for a known provider that is not configured;
+	// Reason then says what is missing.
+	Available       bool              `json:"available"`
+	Reason          string            `json:"reason"`
 	Capabilities    []string          `json:"capabilities"`
 	Models          map[string]string `json:"models"`
 	UnitPriceMicros int64             `json:"unitPriceMicros"`
@@ -230,7 +234,7 @@ func (h studioHandlers) providers(w http.ResponseWriter, _ *http.Request) {
 	}
 	for _, p := range h.d.Providers.All() {
 		info := ProviderInfo{
-			Name: p.Name(), Label: p.Label(), Models: map[string]string{},
+			Name: p.Name(), Label: p.Label(), Available: true, Models: map[string]string{},
 			UnitPriceMicros: h.d.Providers.UnitPrice(p.Name()), Recipes: []string{},
 		}
 		for _, c := range p.Capabilities() {
@@ -243,6 +247,12 @@ func (h studioHandlers) providers(w http.ResponseWriter, _ *http.Request) {
 			}
 		}
 		resp.Providers = append(resp.Providers, info)
+	}
+	for _, u := range h.d.Providers.Unavailable() {
+		resp.Providers = append(resp.Providers, ProviderInfo{
+			Name: u.Name, Label: u.Label, Reason: u.Reason,
+			Capabilities: []string{}, Models: map[string]string{}, Recipes: []string{},
+		})
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

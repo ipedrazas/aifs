@@ -13,6 +13,7 @@ import {
 import { StatusBadge } from '../../components/StatusBadge'
 import { ConfirmButton } from '../../components/ui/ConfirmButton'
 import { ErrorMessage } from '../../components/ui/ErrorMessage'
+import { useProduct, VIEW_LABELS } from '../../api/products'
 import { formatCost, formatDate, formatDuration } from '../../lib/format'
 import { NotFound } from '../NotFound'
 import { ASPECT_RATIOS } from './aspectRatios'
@@ -83,27 +84,39 @@ function Subjects({ ps }: { ps: Photoshoot }) {
 
 function GeneratePanel({ ps }: { ps: Photoshoot }) {
   const providers = useProviders()
+  const product = useProduct(ps.productId)
   const start = useStartGeneration(ps.id)
   const [recipe, setRecipe] = useState('reference')
   const [provider, setProvider] = useState('')
   const [variations, setVariations] = useState(2)
+  const [garment, setGarment] = useState('')
 
   const info = providers.data
-  const eligible = info?.providers.filter((p) => p.recipes.includes(recipe)) ?? []
+  const available = info?.providers.filter((p) => p.available) ?? []
+  const unavailable = info?.providers.filter((p) => !p.available) ?? []
+  const eligible = available.filter((p) => p.recipes.includes(recipe))
   const chosen = eligible.find((p) => p.name === provider) ?? eligible[0]
   const max = info?.maxVariations ?? 4
-  const steps = info?.recipes.find((r) => r.name === recipe)?.steps.length ?? 1
+  const recipeInfo = info?.recipes.find((r) => r.name === recipe)
+  const steps = recipeInfo?.steps.length ?? 1
+  const usesTryOn = recipeInfo?.steps.some((s) => s.capability === 'try_on') ?? false
+  const images = product.data?.images ?? []
 
   function submit(e: FormEvent) {
     e.preventDefault()
     if (!chosen) return
-    start.mutate({ recipe, provider: chosen.name, variations })
+    start.mutate({ recipe, provider: chosen.name, variations, ...(garment ? { garmentImageId: Number(garment) } : {}) })
   }
 
-  if (info && info.providers.length === 0) {
+  if (info && available.length === 0) {
     return (
-      <div className="rounded border border-stone-200 bg-white p-4 text-sm text-stone-600">
-        No AI provider is configured, so nothing can be generated yet.
+      <div className="space-y-1 rounded border border-stone-200 bg-white p-4 text-sm text-stone-600">
+        <p>No AI provider is configured, so nothing can be generated yet.</p>
+        {unavailable.map((p) => (
+          <p key={p.name} className="text-xs">
+            {p.label}: {p.reason}
+          </p>
+        ))}
       </div>
     )
   }
@@ -134,8 +147,31 @@ function GeneratePanel({ ps }: { ps: Photoshoot }) {
               {p.label}
             </option>
           ))}
+          {unavailable.map((p) => (
+            <option key={p.name} value={p.name} disabled>
+              {p.label} — {p.reason}
+            </option>
+          ))}
         </select>
+        {!chosen && <p className="text-xs text-amber-800">No configured provider can run this recipe.</p>}
       </div>
+      {usesTryOn && images.length > 0 && (
+        <div className="space-y-1">
+          <label htmlFor="gen-garment" className="block text-sm text-stone-700">
+            Garment photograph
+          </label>
+          <select id="gen-garment" value={garment} onChange={(e) => setGarment(e.target.value)} className={fieldClass}>
+            <option value="">Front view (default)</option>
+            {images.map((im) => (
+              <option key={im.id} value={im.id}>
+                {VIEW_LABELS[im.view]}
+                {im.filename ? ` — ${im.filename}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-stone-500">Try-on sends one garment photograph; choose the view that matches the shot.</p>
+        </div>
+      )}
       <div className="space-y-1">
         <label htmlFor="gen-variations" className="block text-sm text-stone-700">
           Variations

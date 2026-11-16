@@ -62,3 +62,27 @@ test('the variation cap is enforced by the server', async ({ page }) => {
   expect(res.status()).toBe(422)
   expect((await res.json()).error.fields.variations).toMatch(/between 1 and 4/)
 })
+
+test('FASHN is listed but unavailable without a key; try-on on the model photo runs', async ({ page }) => {
+  const providers = await (await page.request.get('/api/v1/providers')).json()
+  const fashn = providers.providers.find((p: { name: string }) => p.name === 'fashn')
+  expect(fashn.available).toBe(false)
+  expect(fashn.reason).toContain('AIFS_FASHN_API_KEY')
+
+  const ps = await seedPhotoshoot(page.request, 'E2E-TRYON')
+  const product = await (await page.request.get(`/api/v1/products/${ps.productId}`)).json()
+  await page.goto(`/photoshoots/${ps.id}`)
+  await expect(page.getByRole('option', { name: /FASHN virtual try-on/ })).toBeDisabled()
+
+  await page.getByLabel('Recipe').selectOption('tryon-photo')
+  await page.getByLabel('Garment photograph').selectOption(String(product.images[0].id))
+  await page.getByLabel('Variations').fill('1')
+  await page.getByRole('button', { name: 'Generate' }).click()
+  const card = page.getByTestId('generation').first()
+  await expect(card).toHaveAttribute('data-status', 'succeeded', { timeout: 20_000 })
+
+  // The image page records which photograph was the garment input.
+  await card.getByTestId('generated-image').first().click()
+  await expect(page.getByText('sent to try-on')).toBeVisible()
+  await expect(page.getByText('dressed by try-on')).toBeVisible()
+})

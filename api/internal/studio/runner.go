@@ -265,6 +265,7 @@ type runStep struct {
 type runGeneration struct {
 	id          int64
 	aspectRatio string
+	category    string
 	inputs      map[int]GenerationInput
 	steps       map[int][]*runStep // by variation, ordered by position
 	cancelReq   bool
@@ -281,7 +282,7 @@ func (r *Runner) load(ctx context.Context, id int64) (*runGeneration, error) {
 	if err := json.Unmarshal([]byte(settings), &snap); err != nil {
 		return nil, err
 	}
-	g.aspectRatio = snap.AspectRatio
+	g.aspectRatio, g.category = snap.AspectRatio, snap.Product.Category
 	for _, in := range snap.Inputs {
 		g.inputs[in.Position] = in
 	}
@@ -505,10 +506,11 @@ func (r *Runner) poll(ctx context.Context, p provider.Provider, st *runStep) (pr
 // buildRequest rebuilds the provider request from stored hashes.
 func (r *Runner) buildRequest(ctx context.Context, g *runGeneration, st *runStep, prev string) (provider.Request, error) {
 	req := provider.Request{
-		Capability:  st.capability,
-		Prompt:      st.request.Prompt,
-		AspectRatio: g.aspectRatio,
-		Seed:        st.request.Seed,
+		Capability:      st.capability,
+		Prompt:          st.request.Prompt,
+		AspectRatio:     g.aspectRatio,
+		Seed:            st.request.Seed,
+		GarmentCategory: g.category,
 	}
 	for _, pos := range st.request.Inputs {
 		in, ok := g.inputs[pos]
@@ -525,6 +527,18 @@ func (r *Runner) buildRequest(ctx context.Context, g *runGeneration, st *runStep
 		} else {
 			req.ModelRefs = append(req.ModelRefs, im)
 		}
+	}
+	if pos := st.request.Source; pos > 0 {
+		in, ok := g.inputs[pos]
+		if !ok {
+			return req, fmt.Errorf("source input %d missing from the snapshot", pos)
+		}
+		im, err := r.readBlob(ctx, blob.Original, in.Hash)
+		if err != nil {
+			return req, fmt.Errorf("read the model photograph: %w", err)
+		}
+		im.Role, im.Label = "source", in.Label
+		req.Source = &im
 	}
 	if st.request.UsesPrevious {
 		if prev == "" {

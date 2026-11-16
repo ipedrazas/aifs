@@ -140,7 +140,8 @@ func TestReferenceRecipeEndToEnd(t *testing.T) {
 	e := newEnv(t, 0, "")
 	e.start()
 	g := e.generate("reference", 3)
-	if g.Status != StatusQueued || len(g.Steps) != 3 || g.StepsTotal != 3 {
+	// The runner may already have claimed it by the time it is read back.
+	if (g.Status != StatusQueued && g.Status != StatusRunning) || len(g.Steps) != 3 || g.StepsTotal != 3 {
 		t.Fatalf("queued: %+v", g)
 	}
 

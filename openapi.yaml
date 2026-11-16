@@ -1182,6 +1182,12 @@ components:
           type: integer
           minimum: 1
           description: Capped by `AIFS_MAX_VARIATIONS` (see `maxVariations` in `GET /api/v1/providers`).
+        garmentImageId:
+          type: integer
+          format: int64
+          description: |
+            A photograph of the photoshoot's product to send first (and alone,
+            for try-on steps). Defaults to the front view.
     GenerationStatus:
       type: string
       enum: [queued, running, succeeded, failed, cancelled]
@@ -1265,7 +1271,7 @@ components:
           type: array
           items:
             type: object
-            required: [position, capability, purpose, provider, providerModel, prompt, inputs, usesPrevious]
+            required: [position, capability, purpose, provider, providerModel, prompt, inputs, usesPrevious, source]
             properties:
               position:
                 type: integer
@@ -1286,6 +1292,9 @@ components:
                   type: integer
               usesPrevious:
                 type: boolean
+              source:
+                type: integer
+                description: Position in `inputs` of the photograph a try-on step dresses; 0 when none.
         inputs:
           type: array
           items:
@@ -1516,12 +1525,18 @@ components:
           type: array
           items:
             type: object
-            required: [name, label, capabilities, models, unitPriceMicros, recipes]
+            required: [name, label, available, reason, capabilities, models, unitPriceMicros, recipes]
             properties:
               name:
                 type: string
               label:
                 type: string
+              available:
+                type: boolean
+                description: False for a known provider that is not configured; it cannot be selected.
+              reason:
+                type: string
+                description: What is missing when unavailable.
               capabilities:
                 type: array
                 items:
@@ -1533,6 +1548,7 @@ components:
               unitPriceMicros:
                 type: integer
                 format: int64
+                description: Expected cost of one call, used for estimates.
               recipes:
                 type: array
                 description: Recipes this provider can run on its own.
