@@ -799,6 +799,62 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/metrics/summary:
+    get:
+      operationId: metricsSummary
+      summary: Success metrics (PRD §10), in total and grouped
+      description: |
+        Rates are over reviewed images (approved, rejected or needing
+        refinement) and are null when nothing has been reviewed. Costs include
+        failed and rejected work.
+      tags: [metrics]
+      parameters:
+        - name: provider
+          in: query
+          description: Generations where any step used this provider.
+          schema:
+            type: string
+        - name: recipe
+          in: query
+          schema:
+            type: string
+        - name: productId
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: from
+          in: query
+          description: First day (UTC) of generation creation, inclusive.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: Last day (UTC) of generation creation, inclusive.
+          schema:
+            type: string
+            format: date
+        - name: testSet
+          in: query
+          description: Only products in the evaluation test set.
+          schema:
+            type: boolean
+        - name: groupBy
+          in: query
+          schema:
+            $ref: "#/components/schemas/MetricsGrouping"
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsSummary"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          $ref: "#/components/responses/Error"
   /api/v1/blobs/{hash}:
     get:
       operationId: getBlob
@@ -919,9 +975,18 @@ components:
         notes:
           type: string
           maxLength: 5000
+        testSet:
+          type: boolean
+          description: Part of the fidelity evaluation test set.
+        printComplexity:
+          $ref: "#/components/schemas/PrintComplexity"
+    PrintComplexity:
+      type: string
+      enum: ["", none, simple, complex]
+      description: How hard the print is to reproduce; empty when unrated.
     Product:
       type: object
-      required: [id, name, sku, category, description, colour, printDetails, notes, createdAt, updatedAt, imageCount, cover]
+      required: [id, name, sku, category, description, colour, printDetails, notes, testSet, printComplexity, createdAt, updatedAt, imageCount, cover]
       properties:
         id:
           type: integer
@@ -940,6 +1005,10 @@ components:
           type: string
         notes:
           type: string
+        testSet:
+          type: boolean
+        printComplexity:
+          $ref: "#/components/schemas/PrintComplexity"
         createdAt:
           type: string
           format: date-time
@@ -1716,6 +1785,87 @@ components:
                       type: string
                     purpose:
                       type: string
+    MetricsGrouping:
+      type: string
+      enum: [pipeline, recipe, provider, product, printComplexity, garmentRefs, preset]
+      default: pipeline
+      description: "`pipeline` is the recipe with the provider of each step."
+    Metrics:
+      type: object
+      required: [generations, variations, images, pending, reviewed, approved, needsRefinement, rejected, approvalRate,
+        rejectionRates, fidelityPassRate, costMicros, costPerApprovedMicros, avgGenerationSeconds, avgTimeToApprovalSeconds,
+        garments, usableImagesPerGarment]
+      properties:
+        generations:
+          type: integer
+        variations:
+          type: integer
+          description: Images requested.
+        images:
+          type: integer
+          description: Images produced.
+        pending:
+          type: integer
+        reviewed:
+          type: integer
+        approved:
+          type: integer
+        needsRefinement:
+          type: integer
+        rejected:
+          type: object
+          description: Rejections by reason.
+          additionalProperties:
+            type: integer
+        approvalRate:
+          type: [number, "null"]
+        rejectionRates:
+          type: object
+          description: Rejections by reason over reviewed images.
+          additionalProperties:
+            type: number
+        fidelityPassRate:
+          type: [number, "null"]
+          description: Reviewed images not rejected for fidelity, over reviewed images.
+        costMicros:
+          type: integer
+          format: int64
+        costPerApprovedMicros:
+          type: [integer, "null"]
+          format: int64
+        avgGenerationSeconds:
+          type: [number, "null"]
+          description: Mean time from request to image, for approved images.
+        avgTimeToApprovalSeconds:
+          type: [number, "null"]
+          description: Mean time from request to the approval decision.
+        garments:
+          type: integer
+          description: Distinct products generated for.
+        usableImagesPerGarment:
+          type: [number, "null"]
+    MetricsGroup:
+      allOf:
+        - $ref: "#/components/schemas/Metrics"
+        - type: object
+          required: [key, label]
+          properties:
+            key:
+              type: string
+            label:
+              type: string
+    MetricsSummary:
+      type: object
+      required: [groupBy, total, groups]
+      properties:
+        groupBy:
+          $ref: "#/components/schemas/MetricsGrouping"
+        total:
+          $ref: "#/components/schemas/Metrics"
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/MetricsGroup"
     LoginRequest:
       type: object
       required: [password]

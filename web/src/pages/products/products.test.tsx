@@ -96,9 +96,11 @@ describe('products', () => {
     visit('/products/new')
     await user.type(await screen.findByLabelText('Name'), 'Slim jeans')
     await user.type(screen.getByLabelText('Colour'), 'indigo')
+    await user.selectOptions(screen.getByLabelText('Print complexity'), 'complex')
+    await user.click(screen.getByLabelText('In the fidelity test set'))
     await user.click(screen.getByRole('button', { name: 'Create product' }))
     expect(await screen.findByRole('heading', { name: 'Slim jeans' })).toBeInTheDocument()
-    expect(sent).toMatchObject({ name: 'Slim jeans', colour: 'indigo', category: 'jeans' })
+    expect(sent).toMatchObject({ name: 'Slim jeans', colour: 'indigo', category: 'jeans', printComplexity: 'complex', testSet: true })
   })
 
   it('uploads photographs as multipart with the chosen view', async () => {

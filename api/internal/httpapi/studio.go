@@ -283,3 +283,32 @@ func (h studioHandlers) getPreset(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, p)
 }
+
+// metricsSummary reports the PRD §10 success metrics.
+func (h studioHandlers) metricsSummary(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	from, err := studio.ParseMetricsDay("from", q.Get("from"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	to, err := studio.ParseMetricsDay("to", q.Get("to"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	sum, err := h.d.Studio.MetricsSummary(r.Context(), studio.MetricsFilter{
+		Provider:  q.Get("provider"),
+		Recipe:    q.Get("recipe"),
+		ProductID: queryID(r, "productId"),
+		From:      from,
+		To:        to,
+		TestSet:   q.Get("testSet") == "true",
+		GroupBy:   q.Get("groupBy"),
+	})
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sum)
+}

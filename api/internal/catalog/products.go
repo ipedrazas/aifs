@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,17 +19,22 @@ const DefaultCategory = "jeans"
 
 // Product is a garment with its reference photographs.
 type Product struct {
-	ID           int64     `json:"id"`
-	Name         string    `json:"name"`
-	SKU          string    `json:"sku"`
-	Category     string    `json:"category"`
-	Description  string    `json:"description"`
-	Colour       string    `json:"colour"`
-	PrintDetails string    `json:"printDetails"`
-	Notes        string    `json:"notes"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
-	ImageCount   int       `json:"imageCount"`
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	SKU          string `json:"sku"`
+	Category     string `json:"category"`
+	Description  string `json:"description"`
+	Colour       string `json:"colour"`
+	PrintDetails string `json:"printDetails"`
+	Notes        string `json:"notes"`
+	// TestSet marks the product as part of the fidelity evaluation set.
+	TestSet bool `json:"testSet"`
+	// PrintComplexity rates how hard the print is to reproduce: "", "none",
+	// "simple" or "complex".
+	PrintComplexity string    `json:"printComplexity"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+	ImageCount      int       `json:"imageCount"`
 	// Cover is the first front photograph, else the first photograph.
 	Cover *ProductImage `json:"cover"`
 	// Images is only filled by Get.
@@ -59,7 +65,13 @@ type ProductInput struct {
 	Colour       *string `json:"colour"`
 	PrintDetails *string `json:"printDetails"`
 	Notes        *string `json:"notes"`
+	TestSet      *bool   `json:"testSet"`
+	// PrintComplexity is "", "none", "simple" or "complex".
+	PrintComplexity *string `json:"printComplexity"`
 }
+
+// PrintComplexities a product can be rated with ("" is unrated).
+var PrintComplexities = []string{"", "none", "simple", "complex"}
 
 func (in *ProductInput) fields() []field {
 	return []field{
@@ -74,7 +86,13 @@ func (in *ProductInput) fields() []field {
 }
 
 func (in *ProductInput) normalise(create bool) error {
-	return normaliseFields(in.fields(), in.Name, create)
+	if err := normaliseFields(in.fields(), in.Name, create); err != nil {
+		return err
+	}
+	if in.PrintComplexity != nil && !slices.Contains(PrintComplexities, *in.PrintComplexity) {
+		return &ValidationError{Fields: map[string]string{"printComplexity": "must be none, simple, complex or empty"}}
+	}
+	return nil
 }
 
 // CreateProduct adds a product.
@@ -88,9 +106,10 @@ func (s *Service) CreateProduct(ctx context.Context, in ProductInput) (Product, 
 	}
 	now := s.timestamp()
 	res, err := s.db.Write.ExecContext(ctx, `
-		INSERT INTO product (name, sku, category, description, colour, print_details, notes, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		*in.Name, nullable(in.SKU), category, str(in.Description), str(in.Colour), str(in.PrintDetails), str(in.Notes), now, now)
+		INSERT INTO product (name, sku, category, description, colour, print_details, notes, test_set, print_complexity, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		*in.Name, nullable(in.SKU), category, str(in.Description), str(in.Colour), str(in.PrintDetails), str(in.Notes),
+		in.TestSet != nil && *in.TestSet, str(in.PrintComplexity), now, now)
 	if isUnique(err) {
 		return Product{}, &ConflictError{Reason: "another product already uses this identifier"}
 	}
@@ -134,6 +153,12 @@ func (s *Service) UpdateProduct(ctx context.Context, id int64, in ProductInput) 
 	if in.Notes != nil {
 		add("notes", *in.Notes)
 	}
+	if in.TestSet != nil {
+		add("test_set", *in.TestSet)
+	}
+	if in.PrintComplexity != nil {
+		add("print_complexity", *in.PrintComplexity)
+	}
 	add("updated_at", s.timestamp())
 	args = append(args, id)
 
@@ -151,7 +176,7 @@ func (s *Service) UpdateProduct(ctx context.Context, id int64, in ProductInput) 
 }
 
 const productCols = `p.id, p.name, COALESCE(p.sku, ''), p.category, p.description, p.colour, p.print_details, p.notes,
-	p.created_at, p.updated_at, (SELECT count(*) FROM product_image WHERE product_id = p.id)`
+	p.test_set, p.print_complexity, p.created_at, p.updated_at, (SELECT count(*) FROM product_image WHERE product_id = p.id)`
 
 const productImageCols = `i.id, i.product_id, i.blob_hash, i.view, i.filename, b.content_type, b.size, b.width, b.height, i.created_at`
 
@@ -162,7 +187,7 @@ func scanProduct(row scanner) (Product, error) {
 	var p Product
 	var created, updated string
 	err := row.Scan(&p.ID, &p.Name, &p.SKU, &p.Category, &p.Description, &p.Colour, &p.PrintDetails, &p.Notes,
-		&created, &updated, &p.ImageCount)
+		&p.TestSet, &p.PrintComplexity, &created, &updated, &p.ImageCount)
 	p.CreatedAt, p.UpdatedAt = parseTime(created), parseTime(updated)
 	return p, err
 }

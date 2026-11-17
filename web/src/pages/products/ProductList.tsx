@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 import { blobUrl } from '../../api/client'
-import { useProducts } from '../../api/products'
+import { COMPLEXITY_LABELS, useProducts } from '../../api/products'
 import { ErrorMessage } from '../../components/ui/ErrorMessage'
 
 export function ProductList() {
@@ -46,6 +46,14 @@ export function ProductList() {
                   <p className="text-xs text-stone-500">
                     {p.sku || 'No identifier'} · {p.imageCount} photo{p.imageCount === 1 ? '' : 's'}
                   </p>
+                  {(p.testSet || p.printComplexity) && (
+                    <p className="flex flex-wrap gap-1 pt-1 text-xs">
+                      {p.testSet && <span className="rounded bg-sky-100 px-1.5 py-0.5 text-sky-800">Test set</span>}
+                      {p.printComplexity && (
+                        <span className="rounded bg-stone-100 px-1.5 py-0.5 text-stone-700">{COMPLEXITY_LABELS[p.printComplexity]}</span>
+                      )}
+                    </p>
+                  )}
                 </div>
               </Link>
             </li>

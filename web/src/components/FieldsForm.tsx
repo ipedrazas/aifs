@@ -7,6 +7,10 @@ export type FieldSpec<K extends string> = {
   multiline?: boolean
   hint?: string
   required?: boolean
+  /** Renders a select with these choices. */
+  options?: { value: string; label: string }[]
+  /** Renders a checkbox; its value is "true" or "false". */
+  checkbox?: boolean
 }
 
 /** A form of text fields that shows per-field errors from the API. */
@@ -49,12 +53,42 @@ export function FieldsForm<K extends string>({
           'aria-invalid': err ? true : undefined,
           className: 'w-full rounded border border-stone-300 px-3 py-2 focus:border-stone-500 focus:outline-none',
         }
+        if (f.checkbox) {
+          return (
+            <div key={f.name} className="space-y-1">
+              <label htmlFor={id} className="flex items-center gap-2 text-sm font-medium text-stone-700">
+                <input
+                  id={id}
+                  name={f.name}
+                  type="checkbox"
+                  checked={values[f.name] === 'true'}
+                  onChange={(e) => setValues((v) => ({ ...v, [f.name]: String(e.target.checked) }))}
+                />
+                {f.label}
+              </label>
+              {f.hint && !err && <p className="text-xs text-stone-500">{f.hint}</p>}
+              {err && <p className="text-xs text-red-700">{err}</p>}
+            </div>
+          )
+        }
         return (
           <div key={f.name} className="space-y-1">
             <label htmlFor={id} className="block text-sm font-medium text-stone-700">
               {f.label}
             </label>
-            {f.multiline ? <textarea rows={3} {...common} /> : <input type="text" {...common} required={f.required} />}
+            {f.options ? (
+              <select {...common}>
+                {f.options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : f.multiline ? (
+              <textarea rows={3} {...common} />
+            ) : (
+              <input type="text" {...common} required={f.required} />
+            )}
             {f.hint && !err && <p className="text-xs text-stone-500">{f.hint}</p>}
             {err && <p className="text-xs text-red-700">{err}</p>}
           </div>

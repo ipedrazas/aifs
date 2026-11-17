@@ -101,6 +101,12 @@ Provider tests replay recorded responses; CI never calls a real provider. To che
 
 Every generated image starts as pending and only a human decision in the Review screen changes that: approve, reject with a reason (product fidelity, photographic quality, other) or mark as needing refinement. The database enforces it: a review status can only change together with a recorded review event, and the history of decisions is append-only. The review screen compares the image with any reference photograph side by side, as a swipe or as an overlay, with linked zoom and pan; press `?` there for keyboard shortcuts.
 
+## Metrics and the fidelity gate
+
+The Metrics page reports the PRD §10 success metrics, in total and grouped by recipe and providers, recipe, providers, product, print complexity, number of garment photographs sent, or preset. It can be filtered by provider, recipe, product, date range and test set. Rates are over reviewed images (pending images are counted, not rated). The fidelity pass rate is the share of reviewed images not rejected for fidelity. Cost per approved image includes failed and rejected work.
+
+Products can be marked as part of the fidelity test set and rated by print complexity.
+
 ## Security
 
 Everything under `/api/v1` except `POST /api/v1/session` requires a session. Sessions are random tokens kept server-side (only their SHA-256 is stored), sent as an `HttpOnly`, `SameSite=Strict` cookie. Login attempts are rate limited per client IP and in total. State-changing requests from another origin are rejected. Run it behind an HTTPS reverse proxy when it is reachable from other machines; behind a proxy all clients share one rate-limit bucket.

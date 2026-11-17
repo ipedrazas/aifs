@@ -19,3 +19,18 @@ export function formatDuration(from?: string | null, to?: string | null): string
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
+
+/** Formats a 0–1 rate as a percentage with one decimal, or "–". */
+export function formatPercent(v: number | null | undefined): string {
+  return v == null ? '–' : `${Math.round(v * 1000) / 10}%`
+}
+
+/** Formats a number of seconds compactly, or "–". */
+export function formatSeconds(v: number | null | undefined): string {
+  if (v == null) return '–'
+  const s = Math.round(v)
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
+  const h = Math.floor(s / 3600)
+  return h < 48 ? `${h}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m` : `${Math.round(h / 24)}d`
+}

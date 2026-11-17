@@ -453,6 +453,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/metrics/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Success metrics (PRD §10), in total and grouped
+         * @description Rates are over reviewed images (approved, rejected or needing
+         *     refinement) and are null when nothing has been reviewed. Costs include
+         *     failed and rejected work.
+         */
+        get: operations["metricsSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/blobs/{hash}": {
         parameters: {
             query?: never;
@@ -492,7 +514,15 @@ export interface components {
             colour?: string;
             printDetails?: string;
             notes?: string;
+            /** @description Part of the fidelity evaluation test set. */
+            testSet?: boolean;
+            printComplexity?: components["schemas"]["PrintComplexity"];
         };
+        /**
+         * @description How hard the print is to reproduce; empty when unrated.
+         * @enum {string}
+         */
+        PrintComplexity: "" | "none" | "simple" | "complex";
         Product: {
             /** Format: int64 */
             id: number;
@@ -503,6 +533,8 @@ export interface components {
             colour: string;
             printDetails: string;
             notes: string;
+            testSet: boolean;
+            printComplexity: components["schemas"]["PrintComplexity"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -922,6 +954,54 @@ export interface components {
                     purpose: string;
                 }[];
             }[];
+        };
+        /**
+         * @description `pipeline` is the recipe with the provider of each step.
+         * @default pipeline
+         * @enum {string}
+         */
+        MetricsGrouping: "pipeline" | "recipe" | "provider" | "product" | "printComplexity" | "garmentRefs" | "preset";
+        Metrics: {
+            generations: number;
+            /** @description Images requested. */
+            variations: number;
+            /** @description Images produced. */
+            images: number;
+            pending: number;
+            reviewed: number;
+            approved: number;
+            needsRefinement: number;
+            /** @description Rejections by reason. */
+            rejected: {
+                [key: string]: number;
+            };
+            approvalRate: number | null;
+            /** @description Rejections by reason over reviewed images. */
+            rejectionRates: {
+                [key: string]: number;
+            };
+            /** @description Reviewed images not rejected for fidelity, over reviewed images. */
+            fidelityPassRate: number | null;
+            /** Format: int64 */
+            costMicros: number;
+            /** Format: int64 */
+            costPerApprovedMicros: number | null;
+            /** @description Mean time from request to image, for approved images. */
+            avgGenerationSeconds: number | null;
+            /** @description Mean time from request to the approval decision. */
+            avgTimeToApprovalSeconds: number | null;
+            /** @description Distinct products generated for. */
+            garments: number;
+            usableImagesPerGarment: number | null;
+        };
+        MetricsGroup: components["schemas"]["Metrics"] & {
+            key: string;
+            label: string;
+        };
+        MetricsSummary: {
+            groupBy: components["schemas"]["MetricsGrouping"];
+            total: components["schemas"]["Metrics"];
+            groups: components["schemas"]["MetricsGroup"][];
         };
         LoginRequest: {
             password: string;
@@ -1896,6 +1976,40 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["Error"];
+        };
+    };
+    metricsSummary: {
+        parameters: {
+            query?: {
+                /** @description Generations where any step used this provider. */
+                provider?: string;
+                recipe?: string;
+                productId?: number;
+                /** @description First day (UTC) of generation creation, inclusive. */
+                from?: string;
+                /** @description Last day (UTC) of generation creation, inclusive. */
+                to?: string;
+                /** @description Only products in the evaluation test set. */
+                testSet?: boolean;
+                groupBy?: components["schemas"]["MetricsGrouping"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Metrics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricsSummary"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Error"];
         };
     };
     getBlob: {

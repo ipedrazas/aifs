@@ -227,3 +227,29 @@ func TestPresetsEndpoint(t *testing.T) {
 	}
 	waitGeneration(t, h, c, g.ID, studio.StatusSucceeded)
 }
+
+func TestMetricsEndpoint(t *testing.T) {
+	h := newServerT(t, fakeDB{}, webFS)
+	c := login(t, h)
+	ps := shootFixture(t, h, c, "")
+	rec := doBody(t, h, http.MethodPost, "/api/v1/photoshoots/"+strconv.FormatInt(ps.ID, 10)+"/generations", `{"recipe":"reference","provider":"fake","variations":1}`, c)
+	g := waitGeneration(t, h, c, decode[studio.Generation](t, rec).ID, studio.StatusSucceeded)
+	if rec := doBody(t, h, http.MethodPost, "/api/v1/images/"+strconv.FormatInt(g.Images[0].ID, 10)+"/review", `{"status":"approved"}`, c); rec.Code != http.StatusOK {
+		t.Fatalf("review: %d %s", rec.Code, rec.Body)
+	}
+
+	today := time.Now().UTC().Format(time.DateOnly)
+	sum := decode[studio.MetricsSummary](t, do(t, h, http.MethodGet, "/api/v1/metrics/summary?provider=fake&from="+today+"&to="+today+"&groupBy=product", c))
+	if sum.Total.Approved != 1 || *sum.Total.ApprovalRate != 1 || len(sum.Groups) != 1 || sum.Groups[0].Label != "Jeans" {
+		t.Fatalf("summary: %+v", sum)
+	}
+	sum = decode[studio.MetricsSummary](t, do(t, h, http.MethodGet, "/api/v1/metrics/summary?testSet=true", c))
+	if sum.Total.Generations != 0 {
+		t.Fatalf("test set: %+v", sum.Total)
+	}
+	for _, q := range []string{"from=yesterday", "groupBy=colour", "from=2026-02-02&to=2026-01-01"} {
+		if rec := do(t, h, http.MethodGet, "/api/v1/metrics/summary?"+q, c); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: %d", q, rec.Code)
+		}
+	}
+}
