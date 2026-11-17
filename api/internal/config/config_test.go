@@ -91,6 +91,7 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		"fake":   {"AIFS_FAKE_PROVIDER": "maybe"},
 		"delay":  {"AIFS_FAKE_DELAY": "soon"},
 		"price":  {"AIFS_FASHN_CREDIT_PRICE_USD": "cheap"},
+		"gemini": {"AIFS_GEMINI_UNIT_PRICE_USD": "-1"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Load(env(m)); err == nil {
@@ -117,5 +118,23 @@ func TestFASHNConfig(t *testing.T) {
 	c, err = Load(env(map[string]string{"AIFS_FASHN_API_KEY_FILE": f}))
 	if err != nil || c.FASHN.APIKey != "from-file" {
 		t.Fatalf("key file: %q %v", c.FASHN.APIKey, err)
+	}
+}
+
+func TestGeminiConfig(t *testing.T) {
+	c, err := Load(env(map[string]string{"OPENROUTER_API_KEY": "or-key", "AIFS_GEMINI_UNIT_PRICE_USD": "0.2"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Gemini.APIKey != "or-key" || c.Gemini.UnitPriceMicros != 200_000 {
+		t.Fatalf("gemini: %+v", c.Gemini)
+	}
+	if s := c.Gemini.String(); strings.Contains(s, "or-key") {
+		t.Fatalf("key printed: %s", s)
+	}
+	// The AIFS_ name wins over OpenRouter's own.
+	c, err = Load(env(map[string]string{"OPENROUTER_API_KEY": "generic", "AIFS_OPENROUTER_API_KEY": "specific", "AIFS_GEMINI_MODEL": "google/gemini-2.5-flash-image"}))
+	if err != nil || c.Gemini.APIKey != "specific" || c.Gemini.Model != "google/gemini-2.5-flash-image" || c.Gemini.UnitPriceMicros != 0 {
+		t.Fatalf("precedence: %+v %v", c.Gemini, err)
 	}
 }

@@ -25,6 +25,7 @@ const keys = {
   images: ['images'] as const,
   image: (id: number) => ['images', id] as const,
   providers: ['providers'] as const,
+  presets: ['presets'] as const,
 }
 
 export function useProviders() {
@@ -32,6 +33,15 @@ export function useProviders() {
     queryKey: keys.providers,
     queryFn: async () => unwrap(await api.GET('/api/v1/providers')),
     staleTime: 60_000,
+  })
+}
+
+/** Scene presets, built-in first. They change rarely. */
+export function usePresets() {
+  return useQuery({
+    queryKey: keys.presets,
+    queryFn: async () => unwrap(await api.GET('/api/v1/presets')).items,
+    staleTime: 5 * 60_000,
   })
 }
 

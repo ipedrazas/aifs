@@ -256,3 +256,30 @@ func (h studioHandlers) providers(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
+
+// PresetList is the body of GET /api/v1/presets.
+type PresetList struct {
+	Items []studio.Preset `json:"items"`
+}
+
+func (h studioHandlers) listPresets(w http.ResponseWriter, r *http.Request) {
+	items, err := h.d.Studio.ListPresets(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PresetList{Items: items})
+}
+
+func (h studioHandlers) getPreset(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	p, err := h.d.Studio.GetPreset(r.Context(), id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}

@@ -193,3 +193,37 @@ func TestReviewEndpoint(t *testing.T) {
 		t.Fatalf("filters: approved=%d pending=%d", len(approved.Items), len(pending.Items))
 	}
 }
+
+func TestPresetsEndpoint(t *testing.T) {
+	h := newServerT(t, fakeDB{}, webFS)
+	c := login(t, h)
+	list := decode[PresetList](t, do(t, h, http.MethodGet, "/api/v1/presets", c))
+	if len(list.Items) != 4 || list.Items[0].Slug != "studio" || !list.Items[0].BuiltIn {
+		t.Fatalf("presets: %+v", list.Items)
+	}
+	outdoor := list.Items[3]
+	got := decode[studio.Preset](t, do(t, h, http.MethodGet, "/api/v1/presets/"+strconv.FormatInt(outdoor.ID, 10), c))
+	if got.Name != "Outdoor" || got.Environment == "" {
+		t.Fatalf("preset: %+v", got)
+	}
+	if rec := do(t, h, http.MethodGet, "/api/v1/presets/999", c); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing preset: %d", rec.Code)
+	}
+
+	// A generation can choose a preset and providers per step.
+	ps := shootFixture(t, h, c, "")
+	if ps.Preset.Name != "Clean studio catalogue" {
+		t.Fatalf("default preset: %+v", ps.Preset)
+	}
+	body := `{"recipe":"tryon","providers":{"reference_generate":"fake","try_on":"fake"},"variations":1,"presetId":` +
+		strconv.FormatInt(outdoor.ID, 10) + `}`
+	rec := doBody(t, h, http.MethodPost, "/api/v1/photoshoots/"+strconv.FormatInt(ps.ID, 10)+"/generations", body, c)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("start: %d %s", rec.Code, rec.Body)
+	}
+	g := decode[studio.Generation](t, rec)
+	if g.Settings.Preset.Slug != "outdoor" || g.Provider != "fake" {
+		t.Fatalf("generation: %+v", g.Settings)
+	}
+	waitGeneration(t, h, c, g.ID, studio.StatusSucceeded)
+}

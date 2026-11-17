@@ -53,6 +53,26 @@ type Config struct {
 
 	// FASHN is the virtual try-on provider; enabled when the key is set.
 	FASHN FASHNConfig
+	// Gemini is the reference-guided image provider, reached through
+	// OpenRouter; enabled when the OpenRouter key is set.
+	Gemini GeminiConfig
+}
+
+// GeminiConfig configures the Gemini provider (via OpenRouter).
+type GeminiConfig struct {
+	APIKey string
+	// Model and Resolution are validated by the adapter.
+	Model      string
+	Resolution string
+	// UnitPriceMicros is the fallback price per image in micro-USD (0: the
+	// adapter default).
+	UnitPriceMicros int64
+	BaseURL         string
+}
+
+// String never prints the key.
+func (g GeminiConfig) String() string {
+	return fmt.Sprintf("{model:%s resolution:%s key-set:%v}", g.Model, g.Resolution, g.APIKey != "")
 }
 
 // FASHNConfig configures the FASHN provider.
@@ -160,6 +180,27 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("AIFS_FASHN_CREDIT_PRICE_USD must be a non-negative number, got %q", getenv("AIFS_FASHN_CREDIT_PRICE_USD"))
 	}
 	c.FASHN.CreditPriceMicros = int64(price*1_000_000 + 0.5)
+
+	// AIFS_OPENROUTER_API_KEY wins; OPENROUTER_API_KEY is the name
+	// OpenRouter's own tools use.
+	if c.Gemini.APIKey, err = secretEnv(getenv, "AIFS_OPENROUTER_API_KEY"); err != nil {
+		return Config{}, err
+	}
+	if c.Gemini.APIKey == "" {
+		if c.Gemini.APIKey, err = secretEnv(getenv, "OPENROUTER_API_KEY"); err != nil {
+			return Config{}, err
+		}
+	}
+	c.Gemini.Model = getenv("AIFS_GEMINI_MODEL")
+	c.Gemini.Resolution = getenv("AIFS_GEMINI_RESOLUTION")
+	c.Gemini.BaseURL = getenv("AIFS_OPENROUTER_BASE_URL")
+	if v := getenv("AIFS_GEMINI_UNIT_PRICE_USD"); v != "" {
+		price, err := strconv.ParseFloat(v, 64)
+		if err != nil || price < 0 {
+			return Config{}, fmt.Errorf("AIFS_GEMINI_UNIT_PRICE_USD must be a non-negative number, got %q", v)
+		}
+		c.Gemini.UnitPriceMicros = int64(price*1_000_000 + 0.5)
+	}
 
 	return c, nil
 }

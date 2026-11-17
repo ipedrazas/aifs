@@ -71,6 +71,10 @@ All configuration comes from environment variables.
 | `AIFS_FASHN_RESOLUTION` | `2k` | `tryon-max` output: `1k`, `2k` or `4k` |
 | `AIFS_FASHN_MODE` | `balanced` | `fast`, `balanced` or `quality` |
 | `AIFS_FASHN_CREDIT_PRICE_USD` | `0.075` | Price of one FASHN credit, for cost estimates and records |
+| `AIFS_OPENROUTER_API_KEY` | | Enables the Gemini image provider through OpenRouter (or `AIFS_OPENROUTER_API_KEY_FILE`; `OPENROUTER_API_KEY` is also read). Get a key at https://openrouter.ai/keys |
+| `AIFS_GEMINI_MODEL` | `google/gemini-3-pro-image` | OpenRouter model id, e.g. `google/gemini-3.1-flash-image` or `google/gemini-2.5-flash-image` (at most 3 reference images) |
+| `AIFS_GEMINI_RESOLUTION` | `2K` | `1K`, `2K` or `4K` (ignored by `gemini-2.5-flash-image`) |
+| `AIFS_GEMINI_UNIT_PRICE_USD` | `0.14` | Price per image for estimates, and recorded when OpenRouter does not report the cost |
 | `AIFS_COOKIE_SECURE` | `true` | Mark the session cookie `Secure`. Set `false` only when serving over plain HTTP on a non-localhost address |
 
 ## Data
@@ -84,9 +88,14 @@ A photoshoot pairs a product with a model. Generating from it queues a job and r
 Recipes combine provider calls: `reference` sends garment photographs, model references and the scene prompt in one call; `tryon` first generates the model in the scene and then dresses them with the garment photograph. Providers:
 
 - **FASHN** (virtual try-on) runs the `tryon-photo` recipe: it dresses the model's own full-body photograph with one garment photograph (chosen per generation, front by default). The cost FASHN reports per job is recorded. `tryon-max` at 2k/balanced costs 3 credits ($0.225) per image.
+- **Gemini** (via OpenRouter) runs the `reference` recipe and the scene step of `tryon`, so approach A can be tested in any preset's environment. Reference images are sent in a fixed order (garments, then model references) behind a short legend naming each one; the cost OpenRouter reports per image is recorded.
 - **Fake** (offline, no cost) runs every recipe; enable it with `AIFS_FAKE_PROVIDER=true`.
 
-Provider tests replay recorded responses; CI never calls a real provider. To check FASHN against the live API (spends credits): `AIFS_FASHN_API_KEY=... task test:live:fashn`.
+Each step of a recipe can use a different provider: for example `tryon` with a Gemini scene and a FASHN try-on. The generation records the provider and model of every step.
+
+Presets set the scene (environment, pose, framing, lighting, style). Four built-in, read-only presets ship with the app: clean studio catalogue, urban lifestyle, coffee shop and outdoor. A photoshoot has a default preset and each generation can choose another; the preset is stored in the generation's snapshot. Presets never describe the garment: prompts carry only the product fields the user typed, and the reference photographs define the garment.
+
+Provider tests replay recorded responses; CI never calls a real provider. To check a provider against the live API (spends money): `AIFS_FASHN_API_KEY=... task test:live:fashn` or `AIFS_OPENROUTER_API_KEY=... task test:live:gemini`.
 
 ## Review
 

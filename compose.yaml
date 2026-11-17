@@ -1,7 +1,10 @@
 # Local and self-hosted use: `task docker:up`, then open http://localhost:8080.
+
+name: aifs
 services:
   aifs:
     image: ${AIFS_IMAGE:-aifs:local}
+    container_name: aifs
     build:
       context: .
       args:
@@ -16,6 +19,18 @@ services:
       AIFS_PASSWORD: ${AIFS_PASSWORD:?set AIFS_PASSWORD (at least 12 characters)}
       # Set to false only when serving over plain HTTP on a non-localhost address.
       AIFS_COOKIE_SECURE: ${AIFS_COOKIE_SECURE:-true}
+      AIFS_FAKE_PROVIDER: ${AIFS_FAKE_PROVIDER:-}
+
+      AIFS_FASHN_API_KEY: ${AIFS_FASHN_API_KEY:-}
+      AIFS_FASHN_MODEL: ${AIFS_FASHN_MODEL:-}
+      AIFS_FASHN_CREDIT_PRICE_USD: ${AIFS_FASHN_CREDIT_PRICE_USD:-}
+
+      AIFS_GEMINI_MODEL: ${AIFS_GEMINI_MODEL:-}
+      AIFS_GEMINI_RESOLUTION: ${AIFS_GEMINI_RESOLUTION:-}
+      AIFS_GEMINI_UNIT_PRICE_USD: ${AIFS_GEMINI_UNIT_PRICE_USD:-}
+
+      AIFS_OPENROUTER_API_KEY: ${AIFS_OPENROUTER_API_KEY:-${OPENROUTER_API_KEY:-}}
+
     volumes:
       - aifs-data:/data
     read_only: true

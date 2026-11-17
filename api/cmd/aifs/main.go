@@ -30,6 +30,7 @@ import (
 	"github.com/ipedrazas/aifs/api/internal/provider"
 	"github.com/ipedrazas/aifs/api/internal/provider/fake"
 	"github.com/ipedrazas/aifs/api/internal/provider/fashn"
+	"github.com/ipedrazas/aifs/api/internal/provider/gemini"
 	"github.com/ipedrazas/aifs/api/internal/studio"
 	"github.com/ipedrazas/aifs/api/internal/version"
 	"github.com/ipedrazas/aifs/api/internal/webui"
@@ -137,6 +138,25 @@ func serve() error {
 	} else {
 		providers.AddUnavailable(provider.Unavailable{
 			Name: fashn.Name, Label: "FASHN virtual try-on", Reason: "set AIFS_FASHN_API_KEY to enable it",
+		})
+	}
+
+	if cfg.Gemini.APIKey != "" {
+		gp, err := gemini.New(gemini.Config{
+			APIKey:          cfg.Gemini.APIKey,
+			Model:           cfg.Gemini.Model,
+			Resolution:      cfg.Gemini.Resolution,
+			UnitPriceMicros: cfg.Gemini.UnitPriceMicros,
+			BaseURL:         cfg.Gemini.BaseURL,
+		})
+		if err != nil {
+			return err
+		}
+		providers.Add(gp, gp.UnitPriceMicros())
+		log.Info("Gemini provider enabled (OpenRouter)", "model", gp.Model(provider.ReferenceGenerate))
+	} else {
+		providers.AddUnavailable(provider.Unavailable{
+			Name: gemini.Name, Label: "Gemini image (OpenRouter)", Reason: "set AIFS_OPENROUTER_API_KEY to enable it",
 		})
 	}
 

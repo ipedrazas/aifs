@@ -417,6 +417,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Photoshoot presets, built-in first */
+        get: operations["listPresets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/presets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** One preset */
+        get: operations["getPreset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/blobs/{hash}": {
         parameters: {
             query?: never;
@@ -573,6 +609,41 @@ export interface components {
             modelId?: number;
             aspectRatio?: components["schemas"]["AspectRatio"];
             customInstructions?: string;
+            /**
+             * Format: int64
+             * @description The preset generations use by default; 0 or absent on create means the built-in studio preset.
+             */
+            presetId?: number;
+        };
+        /** @description The scene of a photograph. Presets never describe the garment. */
+        Preset: {
+            /** Format: int64 */
+            id: number;
+            /** @description Stable identifier of a built-in preset; empty for custom presets. */
+            slug: string;
+            name: string;
+            description: string;
+            environment: string;
+            pose: string;
+            framing: string;
+            lighting: string;
+            style: string;
+            promptFragment: string;
+            /** @description Built-in presets are read-only. */
+            builtIn: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PresetList: {
+            items: components["schemas"]["Preset"][];
+        };
+        PresetSummary: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            builtIn: boolean;
         };
         ProductSummary: {
             /** Format: int64 */
@@ -604,6 +675,9 @@ export interface components {
             updatedAt: string;
             product: components["schemas"]["ProductSummary"];
             model: components["schemas"]["ModelSummary"];
+            /** Format: int64 */
+            presetId: number;
+            preset: components["schemas"]["PresetSummary"];
             generationCount: number;
             /** @description Newest generated image, or empty. */
             latestImageHash: string;
@@ -616,7 +690,20 @@ export interface components {
         GenerationRequest: {
             /** @description A recipe name from `GET /api/v1/providers`. */
             recipe: string;
-            provider: string;
+            /** @description Runs every step that `providers` does not assign. */
+            provider?: string;
+            /**
+             * @description Optional provider per capability (e.g. `{"reference_generate": "gemini",
+             *     "try_on": "fashn"}`), so one recipe can combine services.
+             */
+            providers?: {
+                [key: string]: string;
+            };
+            /**
+             * Format: int64
+             * @description The scene preset; defaults to the photoshoot's preset.
+             */
+            presetId?: number;
             /** @description Capped by `AIFS_MAX_VARIATIONS` (see `maxVariations` in `GET /api/v1/providers`). */
             variations: number;
             /**
@@ -643,6 +730,7 @@ export interface components {
         /** @description The complete, immutable record of what produced a generation's images. */
         Snapshot: {
             recipe: string;
+            /** @description The provider that made the final image; each step records its own. */
             provider: string;
             variations: number;
             aspectRatio: string;
@@ -668,6 +756,20 @@ export interface components {
                 appearance: string;
                 preferredPoses: string;
                 styling: string;
+            };
+            /** @description The preset as it was when generating (id 0 for generations made before presets existed). */
+            preset: {
+                /** Format: int64 */
+                id: number;
+                slug: string;
+                name: string;
+                builtIn: boolean;
+                environment: string;
+                pose: string;
+                framing: string;
+                lighting: string;
+                style: string;
+                promptFragment: string;
             };
             steps: {
                 position: number;
@@ -1749,6 +1851,51 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+        };
+    };
+    listPresets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Presets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresetList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getPreset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The preset */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preset"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
         };
     };
     getBlob: {

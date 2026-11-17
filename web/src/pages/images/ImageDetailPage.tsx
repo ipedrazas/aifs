@@ -72,6 +72,8 @@ export function ImageDetailPage() {
             <dd>{s.provider}</dd>
             <dt className="text-stone-500">Provider models</dt>
             <dd>{s.steps.map((st) => `${st.purpose}: ${st.providerModel}`).join(', ')}</dd>
+            <dt className="text-stone-500">Preset</dt>
+            <dd>{s.preset?.name || '–'}</dd>
             <dt className="text-stone-500">Aspect ratio</dt>
             <dd>{s.aspectRatio}</dd>
             <dt className="text-stone-500">Variation</dt>
