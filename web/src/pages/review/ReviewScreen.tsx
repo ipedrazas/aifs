@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { blobUrl, type ImageDetail, type RejectionReason, type ReviewDecision } from '../../api/client'
 import { useProduct, VIEW_LABELS } from '../../api/products'
-import { useImage, useImages, useReviewImage } from '../../api/studio'
+import { useImage, useImages, useReviewImage, useSaveReviewNotes } from '../../api/studio'
 import { StatusBadge } from '../../components/StatusBadge'
 import { ErrorMessage } from '../../components/ui/ErrorMessage'
 import { ComparisonViewer } from '../../components/viewer/ComparisonViewer'
@@ -101,6 +101,7 @@ function Workspace({
 }) {
   const product = useProduct(image.settings.product.id)
   const review = useReviewImage()
+  const saveNotes = useSaveReviewNotes()
 
   // Reference photographs: those sent with the generation first, then any
   // other current photograph of the product.
@@ -128,6 +129,8 @@ function Workspace({
   const [swipe, setSwipe] = useState(0.5)
   const [opacity, setOpacity] = useState(0.5)
   const [notes, setNotes] = useState(image.reviewerNotes)
+  // The notes the server has, to save only real changes.
+  const [savedNotes, setSavedNotes] = useState(image.reviewerNotes)
   const [rejecting, setRejecting] = useState(false)
   const [help, setHelp] = useState(false)
   const notesRef = useRef<HTMLTextAreaElement>(null)
@@ -138,7 +141,30 @@ function Workspace({
   function decide(status: ReviewDecision, reason?: RejectionReason) {
     if (review.isPending) return
     setRejecting(false)
-    review.mutate({ id: image.id, status, reason, notes }, { onSuccess: () => onNext?.() })
+    review.mutate(
+      { id: image.id, status, reason, notes },
+      {
+        onSuccess: (im) => {
+          setSavedNotes(im.reviewerNotes)
+          onNext?.()
+        },
+      },
+    )
+  }
+
+  /** Autosave: notes are kept when the field loses focus, decision or not. */
+  function onNotesBlur(e: React.FocusEvent<HTMLTextAreaElement>) {
+    // A decision button carries the notes itself.
+    if ((e.relatedTarget as HTMLElement | null)?.closest('[data-decision]')) return
+    if (notes.trim() === savedNotes) return
+    saveNotes.mutate(
+      { id: image.id, notes },
+      {
+        onSuccess: (im) => {
+          setSavedNotes(im.reviewerNotes)
+        },
+      },
+    )
   }
 
   // Keyboard shortcuts. Read the latest state through a ref so the listener
@@ -345,17 +371,26 @@ function Workspace({
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              onBlur={onNotesBlur}
               placeholder="What is wrong or right with this image?"
               className="w-full rounded border border-stone-300 px-3 py-2 text-sm focus:border-stone-500 focus:outline-none"
             />
+            <p className="text-xs text-stone-500" role="status">
+              {saveNotes.isPending
+                ? 'Saving notes…'
+                : saveNotes.isSuccess && notes.trim() === savedNotes
+                  ? 'Notes saved'
+                  : 'Saved when you leave the field or decide.'}
+            </p>
+            <ErrorMessage error={saveNotes.error} />
           </div>
 
           <div className="space-y-2">
-            <button type="button" onClick={() => decide('approved')} disabled={review.isPending} className={`${btn} w-full bg-emerald-700 text-white`}>
+            <button type="button" data-decision onClick={() => decide('approved')} disabled={review.isPending} className={`${btn} w-full bg-emerald-700 text-white`}>
               Approve (A)
             </button>
             {!rejecting ? (
-              <button type="button" onClick={() => setRejecting(true)} disabled={review.isPending} className={`${btn} w-full bg-red-700 text-white`}>
+              <button type="button" data-decision onClick={() => setRejecting(true)} disabled={review.isPending} className={`${btn} w-full bg-red-700 text-white`}>
                 Reject… (R)
               </button>
             ) : (
@@ -365,6 +400,7 @@ function Workspace({
                   <button
                     key={r.value}
                     type="button"
+                    data-decision
                     onClick={() => decide('rejected', r.value)}
                     disabled={review.isPending}
                     className={`${btn} w-full border border-red-300 bg-white text-left text-red-900`}
@@ -377,7 +413,7 @@ function Workspace({
                 </button>
               </div>
             )}
-            <button type="button" onClick={() => decide('needs_refinement')} disabled={review.isPending} className={`${btn} w-full bg-violet-700 text-white`}>
+            <button type="button" data-decision onClick={() => decide('needs_refinement')} disabled={review.isPending} className={`${btn} w-full bg-violet-700 text-white`}>
               Needs refinement (F)
             </button>
             <ErrorMessage error={review.error} />

@@ -610,7 +610,12 @@ paths:
           $ref: "#/components/responses/Error"
     delete:
       operationId: deletePhotoshoot
-      summary: Delete a photoshoot that has never been generated from
+      summary: Delete a photoshoot and everything generated from it
+      description: |
+        Deletes the photoshoot's generations, their steps and inputs, the
+        generated images and their review history. Image bytes nothing else
+        uses are removed, and the work no longer counts in the metrics. Refused
+        (409) while a generation is queued or running.
       tags: [photoshoots]
       responses:
         "204":
@@ -793,6 +798,49 @@ paths:
       responses:
         "200":
           description: The image with its updated review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/images/{id}/notes:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    put:
+      operationId: saveReviewNotes
+      summary: Save the reviewer's notes without a new decision
+      description: |
+        On a pending image the notes are a draft that the decision carries.
+        On a reviewed image the change is recorded in `reviewHistory` as a new
+        event with the same decision. Saving unchanged notes records nothing.
+      tags: [images]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [notes]
+              properties:
+                notes:
+                  type: string
+                  maxLength: 2000
+      responses:
+        "200":
+          description: The image with its notes
           content:
             application/json:
               schema:

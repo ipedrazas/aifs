@@ -201,6 +201,18 @@ func (s *Service) collect(ctx context.Context, hashes []string) {
 	}
 }
 
+// CollectOriginals removes original photographs nothing refers to any more
+// (for example inputs of deleted generations whose product image was
+// already deleted).
+func (s *Service) CollectOriginals(ctx context.Context, hashes []string) {
+	if len(hashes) == 0 {
+		return
+	}
+	s.blobMu.Lock()
+	defer s.blobMu.Unlock()
+	s.collect(ctx, hashes)
+}
+
 // cleanFilename keeps the base name of the uploaded file for display only.
 func cleanFilename(name string) string {
 	if i := strings.LastIndexAny(name, `/\`); i >= 0 {

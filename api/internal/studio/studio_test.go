@@ -429,12 +429,6 @@ func TestUsedRecordsAreKept(t *testing.T) {
 		_ = o.Close()
 	}
 
-	// A photoshoot with generations cannot be deleted; an unused one can.
-	var ce *ConflictError
-	if err := e.svc.DeletePhotoshoot(ctx, e.shoot.ID); !errors.As(err, &ce) {
-		t.Fatalf("delete used photoshoot: %v", err)
-	}
-
 	// The snapshot cannot be rewritten.
 	if _, err := e.db.Write.ExecContext(ctx, `UPDATE generation SET prompt = 'x' WHERE id = ?`, g.ID); err == nil ||
 		!strings.Contains(err.Error(), "immutable") {
@@ -467,7 +461,7 @@ func TestPhotoshootCRUD(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("list: %+v", list)
 	}
-	if err := e.svc.DeletePhotoshoot(ctx, e.shoot.ID); err != nil {
+	if _, err := e.svc.DeletePhotoshoot(ctx, e.shoot.ID); err != nil {
 		t.Fatalf("delete unused: %v", err)
 	}
 }

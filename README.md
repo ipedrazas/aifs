@@ -115,7 +115,9 @@ From the product page, any uploaded photograph can be processed on request: **re
 
 ## Review
 
-Every generated image starts as pending and only a human decision in the Review screen changes that: approve, reject with a reason (product fidelity, photographic quality, other) or mark as needing refinement. The database enforces it: a review status can only change together with a recorded review event, and the history of decisions is append-only. The review screen compares the image with any reference photograph side by side, as a swipe or as an overlay, with linked zoom and pan; press `?` there for keyboard shortcuts.
+Every generated image starts as pending and only a human decision in the Review screen changes that: approve, reject with a reason (product fidelity, photographic quality, other) or mark as needing refinement. The database enforces it: a review status can only change together with a recorded review event, and the history of decisions is append-only. The review screen compares the image with any reference photograph side by side, as a swipe or as an overlay, with linked zoom and pan; press `?` there for keyboard shortcuts. Notes are saved when the field loses focus, before or after a decision; a change to the notes of a reviewed image is recorded in its history.
+
+Deleting a photoshoot deletes everything generated from it: generations, images and their review history, and the image bytes nothing else uses. The work no longer counts in the metrics. It is refused while a generation is still running. A product or model used by a photoshoot can be deleted once its photoshoots are; until then a used model is archived instead.
 
 ## Metrics and the fidelity gate
 

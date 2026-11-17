@@ -125,3 +125,43 @@ func TestNoUnrecordedApproval(t *testing.T) {
 		t.Fatalf("state changed: %+v", d)
 	}
 }
+
+func TestSaveReviewNotes(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t, 0, "")
+	e.start()
+	g := e.waitStatus(e.generate("reference", 1).ID, StatusSucceeded)
+	id := g.Images[0].ID
+
+	// A draft on a pending image: no decision, no event.
+	im, err := e.svc.SaveReviewNotes(ctx, id, "  belt loop missing ")
+	if err != nil || im.ReviewerNotes != "belt loop missing" || im.ReviewStatus != "pending" || len(im.ReviewHistory) != 0 {
+		t.Fatalf("draft: %+v %v", im, err)
+	}
+
+	// The decision carries the notes; editing them afterwards is recorded.
+	if _, err := e.svc.ReviewImage(ctx, id, ReviewInput{Status: "rejected", Reason: "fidelity", Notes: im.ReviewerNotes}); err != nil {
+		t.Fatal(err)
+	}
+	im, err = e.svc.SaveReviewNotes(ctx, id, "belt loop missing; pocket on the wrong side")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := im.ReviewHistory
+	if im.ReviewStatus != "rejected" || im.RejectionReason != "fidelity" || len(h) != 2 ||
+		h[1].Status != "rejected" || h[1].RejectionReason != "fidelity" || h[1].Notes != "belt loop missing; pocket on the wrong side" {
+		t.Fatalf("edit: %+v", im)
+	}
+
+	// Saving the same notes again records nothing.
+	if im, _ = e.svc.SaveReviewNotes(ctx, id, "belt loop missing; pocket on the wrong side"); len(im.ReviewHistory) != 2 {
+		t.Fatalf("unchanged notes recorded: %d events", len(im.ReviewHistory))
+	}
+	var ve *ValidationError
+	if _, err := e.svc.SaveReviewNotes(ctx, id, strings.Repeat("x", 2001)); !errors.As(err, &ve) {
+		t.Fatalf("too long: %v", err)
+	}
+	if _, err := e.svc.SaveReviewNotes(ctx, 9999, "x"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown: %v", err)
+	}
+}

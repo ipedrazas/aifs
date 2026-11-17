@@ -104,6 +104,7 @@ func New(d Deps) http.Handler {
 	api.HandleFunc("GET /api/v1/images", st.listImages)
 	api.HandleFunc("GET /api/v1/images/{id}", st.getImage)
 	api.HandleFunc("POST /api/v1/images/{id}/review", st.reviewImage)
+	api.HandleFunc("PUT /api/v1/images/{id}/notes", st.saveReviewNotes)
 	api.HandleFunc("GET /api/v1/providers", st.providers)
 	api.HandleFunc("GET /api/v1/presets", st.listPresets)
 	api.HandleFunc("GET /api/v1/presets/{id}", st.getPreset)
