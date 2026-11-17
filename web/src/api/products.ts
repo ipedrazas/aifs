@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, unwrap, type ProductInput, type View } from './client'
+import { api, unwrap, type PrintComplexity, type ProductInput, type View } from './client'
 
 export const VIEWS: View[] = ['front', 'back', 'side', 'detail', 'print']
 
@@ -98,4 +98,11 @@ export function useDeleteImage(productId: number) {
     },
     onSuccess: () => client.invalidateQueries({ queryKey: keys.all }),
   })
+}
+
+export const COMPLEXITY_LABELS: Record<PrintComplexity, string> = {
+  '': 'Not rated',
+  none: 'No print',
+  simple: 'Simple print',
+  complex: 'Complex print',
 }

@@ -103,6 +103,7 @@ func New(d Deps) http.Handler {
 	api.HandleFunc("GET /api/v1/providers", st.providers)
 	api.HandleFunc("GET /api/v1/presets", st.listPresets)
 	api.HandleFunc("GET /api/v1/presets/{id}", st.getPreset)
+	api.HandleFunc("GET /api/v1/metrics/summary", st.metricsSummary)
 
 	api.HandleFunc("GET /api/v1/blobs/{hash}", blobHandler(d))
 

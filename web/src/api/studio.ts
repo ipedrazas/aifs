@@ -7,6 +7,7 @@ import {
   type Photoshoot,
   type PhotoshootInput,
   type ImageDetail,
+  type MetricsGrouping,
   type ReviewInput,
   type ReviewStatus,
 } from './client'
@@ -26,6 +27,7 @@ const keys = {
   image: (id: number) => ['images', id] as const,
   providers: ['providers'] as const,
   presets: ['presets'] as const,
+  metrics: ['metrics'] as const,
 }
 
 export function useProviders() {
@@ -42,6 +44,24 @@ export function usePresets() {
     queryKey: keys.presets,
     queryFn: async () => unwrap(await api.GET('/api/v1/presets')).items,
     staleTime: 5 * 60_000,
+  })
+}
+
+export type MetricsQuery = {
+  provider?: string
+  recipe?: string
+  productId?: number
+  from?: string
+  to?: string
+  testSet?: boolean
+  groupBy?: MetricsGrouping
+}
+
+/** Success metrics for the filtered generations. */
+export function useMetrics(query: MetricsQuery) {
+  return useQuery({
+    queryKey: [...keys.metrics, query],
+    queryFn: async () => unwrap(await api.GET('/api/v1/metrics/summary', { params: { query } })),
   })
 }
 
