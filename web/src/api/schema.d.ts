@@ -995,6 +995,7 @@ export interface components {
                 available: boolean;
                 /** @description What is missing when unavailable. */
                 reason: string;
+                /** @description What the provider offers (or would offer once configured). */
                 capabilities: string[];
                 models: {
                     [key: string]: string;
