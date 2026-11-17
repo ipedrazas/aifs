@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ipedrazas/aifs/api/internal/blob"
 	"github.com/ipedrazas/aifs/api/internal/catalog"
 )
 
@@ -233,19 +234,124 @@ func (s *Service) UpdatePhotoshoot(ctx context.Context, id int64, in PhotoshootI
 	return s.GetPhotoshoot(ctx, id)
 }
 
-// DeletePhotoshoot removes a photoshoot that has never been generated from.
-func (s *Service) DeletePhotoshoot(ctx context.Context, id int64) error {
-	res, err := s.db.Write.ExecContext(ctx, `DELETE FROM photoshoot WHERE id = ?`, id)
-	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
-		return &ConflictError{Reason: "this photoshoot has generations and is kept for traceability"}
-	}
+// PhotoshootDeletion reports what deleting a photoshoot removed.
+type PhotoshootDeletion struct {
+	Generations int `json:"generations"`
+	Images      int `json:"images"`
+}
+
+// DeletePhotoshoot deletes a photoshoot together with its generations, their
+// steps and inputs, the generated images and their review history. It is
+// refused while a generation is queued or running. Image bytes nothing else
+// uses are removed. The deleted work no longer counts in the metrics.
+func (s *Service) DeletePhotoshoot(ctx context.Context, id int64) (PhotoshootDeletion, error) {
+	tx, err := s.db.Write.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return PhotoshootDeletion{}, err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
+	defer func() { _ = tx.Rollback() }()
+
+	var exists, active int
+	var del PhotoshootDeletion
+	if err := tx.QueryRowContext(ctx, `
+		SELECT (SELECT count(*) FROM photoshoot WHERE id = ?1),
+			(SELECT count(*) FROM generation WHERE photoshoot_id = ?1 AND status IN ('queued', 'running')),
+			(SELECT count(*) FROM generation WHERE photoshoot_id = ?1),
+			(SELECT count(*) FROM generated_image gi JOIN generation g ON g.id = gi.generation_id WHERE g.photoshoot_id = ?1)`, id).
+		Scan(&exists, &active, &del.Generations, &del.Images); err != nil {
+		return PhotoshootDeletion{}, err
 	}
-	return nil
+	if exists == 0 {
+		return PhotoshootDeletion{}, ErrNotFound
+	}
+	if active > 0 {
+		return PhotoshootDeletion{}, &ConflictError{Reason: "a generation of this photoshoot is still running: cancel it or wait for it to finish"}
+	}
+
+	// Every blob the deleted records refer to, collected afterwards if
+	// nothing else uses it.
+	hashes, err := photoshootBlobs(ctx, tx, id)
+	if err != nil {
+		return PhotoshootDeletion{}, err
+	}
+
+	gens := `(SELECT id FROM generation WHERE photoshoot_id = ?1)`
+	images := `(SELECT id FROM generated_image WHERE generation_id IN ` + gens + `)`
+	for _, q := range []string{
+		`INSERT INTO purge_guard (id) VALUES (1)`,
+		`DELETE FROM review_event WHERE generated_image_id IN ` + images,
+		`DELETE FROM generated_image WHERE generation_id IN ` + gens,
+		`DELETE FROM generation_step WHERE generation_id IN ` + gens,
+		`DELETE FROM generation_input WHERE generation_id IN ` + gens,
+		`DELETE FROM generation WHERE photoshoot_id = ?1`,
+		`DELETE FROM photoshoot WHERE id = ?1`,
+		`DELETE FROM purge_guard`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
+			if strings.Contains(err.Error(), "FOREIGN KEY") {
+				return PhotoshootDeletion{}, &ConflictError{Reason: "images of this photoshoot are the parents of images elsewhere and cannot be deleted"}
+			}
+			return PhotoshootDeletion{}, fmt.Errorf("delete photoshoot %d: %w", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return PhotoshootDeletion{}, err
+	}
+	s.collectBlobs(ctx, hashes)
+	s.log.InfoContext(ctx, "photoshoot deleted", "photoshoot", id, "generations", del.Generations, "images", del.Images)
+	return del, nil
+}
+
+// photoshootBlobs lists every blob the photoshoot's records refer to.
+func photoshootBlobs(ctx context.Context, tx *sql.Tx, id int64) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT gi.blob_hash FROM generated_image gi JOIN generation g ON g.id = gi.generation_id WHERE g.photoshoot_id = ?1
+		UNION SELECT st.output_blob_hash FROM generation_step st JOIN generation g ON g.id = st.generation_id
+			WHERE g.photoshoot_id = ?1 AND st.output_blob_hash IS NOT NULL
+		UNION SELECT i.blob_hash FROM generation_input i JOIN generation g ON g.id = i.generation_id WHERE g.photoshoot_id = ?1`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// collectBlobs removes the rows and bytes of blobs nothing refers to any
+// more. Originals go through the catalog, which serialises them with uploads.
+func (s *Service) collectBlobs(ctx context.Context, hashes []string) {
+	var originals []string
+	for _, h := range hashes {
+		var ns string
+		if err := s.db.Read.QueryRowContext(ctx, `SELECT namespace FROM blob WHERE hash = ?`, h).Scan(&ns); err != nil {
+			continue
+		}
+		if ns == string(blob.Original) {
+			originals = append(originals, h)
+			continue
+		}
+		res, err := s.db.Write.ExecContext(ctx, `DELETE FROM blob WHERE hash = ? AND namespace = 'generated'`, h)
+		if err != nil {
+			continue // still referenced (foreign key), or already gone
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			continue
+		}
+		if err := s.blobs.Delete(ctx, blob.Generated, h); err != nil {
+			s.log.ErrorContext(ctx, "blob gc: delete bytes", "hash", h, "err", err)
+		}
+		if err := s.blobs.DeleteDerived(ctx, h); err != nil {
+			s.log.ErrorContext(ctx, "blob gc: delete derivatives", "hash", h, "err", err)
+		}
+	}
+	s.catalog.CollectOriginals(ctx, originals)
 }
 
 const photoshootCols = `ps.id, ps.name, ps.product_id, ps.model_id, ps.aspect_ratio, ps.custom_instructions,

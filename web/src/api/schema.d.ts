@@ -294,7 +294,13 @@ export interface paths {
         get: operations["getPhotoshoot"];
         put?: never;
         post?: never;
-        /** Delete a photoshoot that has never been generated from */
+        /**
+         * Delete a photoshoot and everything generated from it
+         * @description Deletes the photoshoot's generations, their steps and inputs, the
+         *     generated images and their review history. Image bytes nothing else
+         *     uses are removed, and the work no longer counts in the metrics. Refused
+         *     (409) while a generation is queued or running.
+         */
         delete: operations["deletePhotoshoot"];
         options?: never;
         head?: never;
@@ -417,6 +423,30 @@ export interface paths {
          *     reason. Images can never return to `pending`.
          */
         post: operations["reviewImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/images/{id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save the reviewer's notes without a new decision
+         * @description On a pending image the notes are a draft that the decision carries.
+         *     On a reviewed image the change is recorded in `reviewHistory` as a new
+         *     event with the same decision. Saving unchanged notes records nothing.
+         */
+        put: operations["saveReviewNotes"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2009,6 +2039,38 @@ export interface operations {
         };
         responses: {
             /** @description The image with its updated review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageDetail"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    saveReviewNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    notes: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The image with its notes */
             200: {
                 headers: {
                     [name: string]: unknown;

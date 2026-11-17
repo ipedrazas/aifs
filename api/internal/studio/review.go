@@ -2,6 +2,8 @@ package studio
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -89,6 +91,51 @@ func (s *Service) ReviewImage(ctx context.Context, id int64, in ReviewInput) (Im
 		return ImageDetail{}, err
 	}
 	s.log.InfoContext(ctx, "image reviewed", "image", id, "status", in.Status, "reason", in.Reason)
+	return s.GetImage(ctx, id)
+}
+
+// SaveReviewNotes stores the reviewer's notes on their own, so notes are not
+// lost when they are written before or after the decision. On an image that
+// has been reviewed, the change is recorded as a new review event with the
+// same decision, so the history shows it. On a pending image the notes are a
+// draft that the decision will carry.
+func (s *Service) SaveReviewNotes(ctx context.Context, id int64, notes string) (ImageDetail, error) {
+	notes = strings.TrimSpace(notes)
+	if utf8.RuneCountInString(notes) > maxNotes {
+		return ImageDetail{}, invalid("notes", "must be at most 2000 characters")
+	}
+	tx, err := s.db.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return ImageDetail{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status, current string
+	var reason *string
+	err = tx.QueryRowContext(ctx, `SELECT review_status, rejection_reason, reviewer_notes FROM generated_image WHERE id = ?`, id).
+		Scan(&status, &reason, &current)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ImageDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return ImageDetail{}, err
+	}
+	if notes == current {
+		return s.GetImage(ctx, id)
+	}
+	if status != "pending" {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO review_event (generated_image_id, status, rejection_reason, notes, created_at) VALUES (?, ?, ?, ?, ?)`,
+			id, status, reason, notes, s.timestamp()); err != nil {
+			return ImageDetail{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE generated_image SET reviewer_notes = ? WHERE id = ?`, notes, id); err != nil {
+		return ImageDetail{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ImageDetail{}, err
+	}
 	return s.GetImage(ctx, id)
 }
 

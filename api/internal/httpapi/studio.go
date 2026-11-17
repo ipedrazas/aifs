@@ -83,7 +83,7 @@ func (h studioHandlers) deletePhotoshoot(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if err := h.d.Studio.DeletePhotoshoot(r.Context(), id); err != nil {
+	if _, err := h.d.Studio.DeletePhotoshoot(r.Context(), id); err != nil {
 		h.fail(w, r, err)
 		return
 	}
@@ -181,6 +181,28 @@ func (h studioHandlers) reviewImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	im, err := h.d.Studio.ReviewImage(r.Context(), id, in)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, im)
+}
+
+// NotesInput is the body of PUT /api/v1/images/{id}/notes.
+type NotesInput struct {
+	Notes string `json:"notes"`
+}
+
+func (h studioHandlers) saveReviewNotes(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var in NotesInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	im, err := h.d.Studio.SaveReviewNotes(r.Context(), id, in.Notes)
 	if err != nil {
 		h.fail(w, r, err)
 		return

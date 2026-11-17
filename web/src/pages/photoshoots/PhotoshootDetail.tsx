@@ -333,18 +333,26 @@ function Settings({ ps }: { ps: Photoshoot }) {
         </button>
         <p className="text-xs text-stone-500">Changes apply to new generations; past ones keep the settings they used.</p>
       </form>
-      {ps.generationCount === 0 && (
-        <div className="border-t border-stone-200 pt-3">
-          <ErrorMessage error={del.error} />
-          <ConfirmButton
-            confirmLabel="Delete photoshoot"
-            disabled={del.isPending}
-            onConfirm={() => del.mutate(undefined, { onSuccess: () => void navigate('/photoshoots') })}
-          >
-            Delete photoshoot
-          </ConfirmButton>
-        </div>
-      )}
+      <div className="space-y-2 border-t border-stone-200 pt-3">
+        {ps.generationCount > 0 && (
+          <p className="text-xs text-stone-600">
+            Deleting also deletes its {ps.generationCount} generation{ps.generationCount === 1 ? '' : 's'}, their images and
+            reviews. They will no longer count in the metrics. This cannot be undone.
+          </p>
+        )}
+        <ErrorMessage error={del.error} />
+        <ConfirmButton
+          confirmLabel={
+            ps.generationCount > 0
+              ? `Delete photoshoot and ${ps.generationCount} generation${ps.generationCount === 1 ? '' : 's'}`
+              : 'Delete photoshoot'
+          }
+          disabled={del.isPending}
+          onConfirm={() => del.mutate(undefined, { onSuccess: () => void navigate('/photoshoots') })}
+        >
+          Delete photoshoot
+        </ConfirmButton>
+      </div>
     </div>
   )
 }

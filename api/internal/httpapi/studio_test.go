@@ -94,12 +94,9 @@ func TestGenerationFlow(t *testing.T) {
 		t.Fatalf("thumbnail: %d", rec.Code)
 	}
 
-	// Finished generations cannot be cancelled; used photoshoots cannot be deleted.
+	// Finished generations cannot be cancelled.
 	if rec := do(t, h, http.MethodPost, "/api/v1/generations/"+strconv.FormatInt(g.ID, 10)+"/cancel", c); rec.Code != http.StatusConflict {
 		t.Errorf("cancel finished: %d", rec.Code)
-	}
-	if rec := do(t, h, http.MethodDelete, base, c); rec.Code != http.StatusConflict {
-		t.Errorf("delete used photoshoot: %d", rec.Code)
 	}
 
 	// The product it used cannot be deleted.
@@ -251,5 +248,42 @@ func TestMetricsEndpoint(t *testing.T) {
 		if rec := do(t, h, http.MethodGet, "/api/v1/metrics/summary?"+q, c); rec.Code != http.StatusUnprocessableEntity {
 			t.Errorf("%s: %d", q, rec.Code)
 		}
+	}
+}
+
+func TestNotesAndPhotoshootDeletion(t *testing.T) {
+	h := newServerT(t, fakeDB{}, webFS)
+	c := login(t, h)
+	ps := shootFixture(t, h, c, "")
+	rec := doBody(t, h, http.MethodPost, "/api/v1/photoshoots/"+strconv.FormatInt(ps.ID, 10)+"/generations",
+		`{"recipe":"reference","provider":"fake","variations":1}`, c)
+	g := waitGeneration(t, h, c, decode[studio.Generation](t, rec).ID, "succeeded")
+	img := "/api/v1/images/" + strconv.FormatInt(g.Images[0].ID, 10)
+
+	rec = doBody(t, h, http.MethodPut, img+"/notes", `{"notes":"pocket on the wrong side"}`, c)
+	if rec.Code != http.StatusOK || decode[studio.ImageDetail](t, rec).ReviewerNotes != "pocket on the wrong side" {
+		t.Fatalf("notes: %d %s", rec.Code, rec.Body)
+	}
+	if rec := doBody(t, h, http.MethodPut, "/api/v1/images/9999/notes", `{"notes":"x"}`, c); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown image: %d", rec.Code)
+	}
+	if rec := doBody(t, h, http.MethodPost, img+"/review", `{"status":"approved","notes":"pocket on the wrong side"}`, c); rec.Code != http.StatusOK {
+		t.Fatalf("review: %d", rec.Code)
+	}
+
+	// The product is used, so it cannot be deleted until its photoshoot is.
+	product := "/api/v1/products/" + strconv.FormatInt(ps.ProductID, 10)
+	if rec := do(t, h, http.MethodDelete, product, c); rec.Code != http.StatusConflict {
+		t.Fatalf("delete used product: %d", rec.Code)
+	}
+	shoot := "/api/v1/photoshoots/" + strconv.FormatInt(ps.ID, 10)
+	if rec := do(t, h, http.MethodDelete, shoot, c); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete photoshoot: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, http.MethodGet, img, c); rec.Code != http.StatusNotFound {
+		t.Fatalf("image kept: %d", rec.Code)
+	}
+	if rec := do(t, h, http.MethodDelete, product, c); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete product: %d %s", rec.Code, rec.Body)
 	}
 }

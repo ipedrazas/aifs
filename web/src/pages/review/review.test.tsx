@@ -74,7 +74,13 @@ function visit(path: string) {
 
 function setup() {
   const reviews: { id: number; body: unknown }[] = []
+  const notes: { id: number; notes: string }[] = []
   const fetch = mockApi({
+    'PUT /api/v1/images/1/notes': async (req) => {
+      const body = await req.json()
+      notes.push({ id: 1, notes: body.notes })
+      return { status: 200, body: detail(1, { reviewerNotes: body.notes.trim() }) }
+    },
     'GET /api/v1/session': loggedIn,
     'GET /api/v1/version': version,
     'GET /api/v1/images': { status: 200, body: { items: [image(1), image(2), image(3)] } },
@@ -101,7 +107,7 @@ function setup() {
       return { status: 200, body: detail(3, { reviewStatus: body.status }) }
     },
   })
-  return { reviews, fetch }
+  return { reviews, notes, fetch }
 }
 
 describe('review gallery', () => {
@@ -126,16 +132,43 @@ describe('review gallery', () => {
 describe('review screen', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('saves notes on blur without a decision, and not again when a decision button takes the focus', async () => {
+    const { reviews, notes } = setup()
+    const user = userEvent.setup()
+    visit('/review/1?status=pending')
+    const field = await screen.findByLabelText(/Notes/)
+
+    await user.click(field)
+    await user.keyboard('pocket on the wrong side')
+    await user.click(document.body)
+    await waitFor(() => expect(notes).toEqual([{ id: 1, notes: 'pocket on the wrong side' }]))
+
+    // Unchanged notes are not saved again.
+    await user.click(field)
+    await user.click(document.body)
+    expect(notes).toHaveLength(1)
+
+    // Editing then clicking a decision: the decision carries the notes.
+    await user.click(field)
+    await user.keyboard('; belt loop missing')
+    await user.click(screen.getByRole('button', { name: 'Approve (A)' }))
+    await waitFor(() => expect(reviews).toHaveLength(1))
+    expect(reviews[0]).toEqual({ id: 1, body: { status: 'approved', notes: 'pocket on the wrong side; belt loop missing' } })
+    expect(notes).toHaveLength(1)
+  })
+
   it('reviews a batch with the keyboard only', async () => {
     const { reviews } = setup()
     const user = userEvent.setup()
     visit('/review/1?status=pending')
     expect(await screen.findByTestId('queue-position')).toHaveTextContent('1 of 3')
 
-    // Notes, then approve: moves on to the next image.
+    // Notes are saved when the field loses focus, then approve: moves on
+    // to the next image, carrying the notes.
     await user.keyboard('n')
     await user.keyboard('looks right')
     await user.keyboard('{Escape}')
+    expect(await screen.findByText('Notes saved')).toBeInTheDocument()
     await user.keyboard('a')
     await waitFor(() => expect(screen.getByTestId('queue-position')).toHaveTextContent('2 of 3'))
     expect(reviews[0]).toEqual({ id: 1, body: { status: 'approved', notes: 'looks right' } })

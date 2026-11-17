@@ -114,6 +114,9 @@ export function useDeletePhotoshoot(id: number) {
     onSuccess: () => {
       client.removeQueries({ queryKey: keys.photoshoot(id) })
       void client.invalidateQueries({ queryKey: [...keys.photoshoots, 'list'] })
+      // Its images and their reviews are gone too.
+      void client.invalidateQueries({ queryKey: keys.images })
+      void client.invalidateQueries({ queryKey: keys.metrics })
     },
   })
 }
@@ -158,6 +161,19 @@ export function useImage(id: number) {
 }
 
 /** Records a review decision for an image. */
+/** Saves review notes without a decision (autosave). */
+export function useSaveReviewNotes() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, notes }: { id: number; notes: string }) =>
+      unwrap(await api.PUT('/api/v1/images/{id}/notes', { params: { path: { id } }, body: { notes } })),
+    onSuccess: (im: ImageDetail) => {
+      client.setQueryData(keys.image(im.id), im)
+      void client.invalidateQueries({ queryKey: [...keys.images, 'list'] })
+    },
+  })
+}
+
 export function useReviewImage() {
   const client = useQueryClient()
   return useMutation({
