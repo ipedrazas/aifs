@@ -114,8 +114,11 @@ function GeneratePanel({ ps }: { ps: Photoshoot }) {
   const [garment, setGarment] = useState('')
 
   const info = providers.data
-  const available = info?.providers.filter((p) => p.available) ?? []
-  const unavailable = info?.providers.filter((p) => !p.available) ?? []
+  // Only providers that can run a generation step (not, e.g., background removal).
+  const stepCapabilities = new Set(info?.recipes.flatMap((r) => r.steps.map((s) => s.capability)) ?? [])
+  const generates = (p: ProviderInfo) => p.capabilities.some((c) => stepCapabilities.has(c))
+  const available = info?.providers.filter((p) => p.available && generates(p)) ?? []
+  const unavailable = info?.providers.filter((p) => !p.available && generates(p)) ?? []
   const max = info?.maxVariations ?? 4
   const recipeInfo = info?.recipes.find((r) => r.name === recipe)
   const slots = recipeSlots(recipeInfo)
@@ -128,7 +131,8 @@ function GeneratePanel({ ps }: { ps: Photoshoot }) {
   const perVariation = (recipeInfo?.steps ?? []).reduce((sum, st) => sum + (chosen[st.capability]?.unitPriceMicros ?? 0), 0)
   const calls = recipeInfo?.steps.length ?? 1
   const usesTryOn = slots.some((s) => s.capability === 'try_on')
-  const images = product.data?.images ?? []
+  // Processed versions replace their originals, as on the server.
+  const images = (product.data?.images ?? []).filter((im) => im.processedImageId == null)
   const preset = presetId || ps.presetId
 
   function submit(e: FormEvent) {
@@ -196,7 +200,9 @@ function GeneratePanel({ ps }: { ps: Photoshoot }) {
                   {p.label}
                 </option>
               ))}
-              {unavailable.map((p) => (
+              {unavailable
+                .filter((p) => p.capabilities.includes(slot.capability))
+                .map((p) => (
                 <option key={p.name} value={p.name} disabled>
                   {p.label} — {p.reason}
                 </option>
@@ -234,6 +240,7 @@ function GeneratePanel({ ps }: { ps: Photoshoot }) {
             {images.map((im) => (
               <option key={im.id} value={im.id}>
                 {VIEW_LABELS[im.view]}
+                {im.sourceImageId != null ? ' (processed)' : ''}
                 {im.filename ? ` — ${im.filename}` : ''}
               </option>
             ))}

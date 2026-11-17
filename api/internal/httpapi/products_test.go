@@ -268,3 +268,51 @@ func TestOriginalsCannotBeModified(t *testing.T) {
 		t.Fatalf("second delete: %d", rec.Code)
 	}
 }
+
+func TestProcessImage(t *testing.T) {
+	h := newServerT(t, fakeDB{}, webFS)
+	c := login(t, h)
+	p := createProduct(t, h, c, `{"name":"jeans"}`)
+	orig := decode[catalog.ProductImage](t, uploadProduct(t, h, c, p.ID, "front", "front.png", fixture(t, "plain.png")))
+	base := "/api/v1/products/" + strconv.FormatInt(p.ID, 10) + "/images/"
+	path := base + strconv.FormatInt(orig.ID, 10) + "/process"
+
+	rec := doBody(t, h, http.MethodPost, path, `{"removeBackground":true,"trim":true}`, c)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("process: %d %s", rec.Code, rec.Body)
+	}
+	im := decode[catalog.ProductImage](t, rec)
+	if im.SourceImageID == nil || *im.SourceImageID != orig.ID || im.Processing == nil || im.Processing.Provider != "fake" ||
+		strings.Join(im.Processing.Steps, ",") != "remove_background,trim" || im.ContentType != "image/png" {
+		t.Fatalf("processed: %s", rec.Body)
+	}
+
+	got := decode[catalog.Product](t, do(t, h, http.MethodGet, "/api/v1/products/"+strconv.FormatInt(p.ID, 10), c))
+	if len(got.Images) != 2 || got.ImageCount != 1 || got.Images[0].ProcessedImageID == nil || *got.Images[0].ProcessedImageID != im.ID || got.Cover.ID != im.ID {
+		t.Fatalf("product: %+v", got)
+	}
+
+	for name, tc := range map[string]struct {
+		path, body string
+		code       int
+	}{
+		"no steps":          {path, `{}`, http.StatusUnprocessableEntity},
+		"bad edge":          {path, `{"maxEdge":5}`, http.StatusUnprocessableEntity},
+		"unknown field":     {path, `{"enhance":true}`, http.StatusBadRequest},
+		"processed version": {base + strconv.FormatInt(im.ID, 10) + "/process", `{"trim":true}`, http.StatusUnprocessableEntity},
+		"unknown image":     {base + "999/process", `{"trim":true}`, http.StatusNotFound},
+	} {
+		if rec := doBody(t, h, http.MethodPost, tc.path, tc.body, c); rec.Code != tc.code {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+
+	// Deleting the processed version reverts to the original.
+	if rec := do(t, h, http.MethodDelete, base+strconv.FormatInt(im.ID, 10), c); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	got = decode[catalog.Product](t, do(t, h, http.MethodGet, "/api/v1/products/"+strconv.FormatInt(p.ID, 10), c))
+	if len(got.Images) != 1 || got.Images[0].ProcessedImageID != nil {
+		t.Fatalf("after revert: %+v", got.Images)
+	}
+}

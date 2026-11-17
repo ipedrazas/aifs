@@ -34,11 +34,20 @@ type RunnerConfig struct {
 	MaxAttempts int
 	// RetryBase is the first backoff delay; it doubles per attempt.
 	RetryBase time.Duration
+	// InputLimits bound the reference photographs sent to providers. Larger
+	// ones are scaled down at send time; the stored originals are kept.
+	InputLimits imaging.ProviderLimits
 }
 
 func (c *RunnerConfig) defaults() {
 	if c.Workers <= 0 {
 		c.Workers = 4
+	}
+	if c.InputLimits.MaxEdge <= 0 {
+		c.InputLimits.MaxEdge = 3072
+	}
+	if c.InputLimits.MaxBytes <= 0 {
+		c.InputLimits.MaxBytes = 10 << 20
 	}
 	if c.ProviderConcurrency <= 0 {
 		c.ProviderConcurrency = 4
@@ -568,7 +577,18 @@ func (r *Runner) readBlob(ctx context.Context, ns blob.Namespace, hash string) (
 	if err != nil {
 		return provider.Image{}, err
 	}
-	return provider.Image{Hash: hash, ContentType: info.ContentType, Data: data}, nil
+	if ns == blob.Generated {
+		// A previous step's output, already provider-sized.
+		return provider.Image{Hash: hash, ContentType: info.ContentType, Data: data}, nil
+	}
+	// Reference photographs are sent upright, opaque and within the size
+	// limits. The conversion is deterministic, so the stored hash still
+	// identifies what was sent.
+	sent, ct, err := imaging.ForProvider(data, r.cfg.InputLimits)
+	if err != nil {
+		return provider.Image{}, err
+	}
+	return provider.Image{Hash: hash, ContentType: ct, Data: sent}, nil
 }
 
 // complete stores the output and marks the step succeeded. The last step of

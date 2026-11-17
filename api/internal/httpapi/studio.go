@@ -249,10 +249,14 @@ func (h studioHandlers) providers(w http.ResponseWriter, _ *http.Request) {
 		resp.Providers = append(resp.Providers, info)
 	}
 	for _, u := range h.d.Providers.Unavailable() {
-		resp.Providers = append(resp.Providers, ProviderInfo{
+		info := ProviderInfo{
 			Name: u.Name, Label: u.Label, Reason: u.Reason,
 			Capabilities: []string{}, Models: map[string]string{}, Recipes: []string{},
-		})
+		}
+		for _, c := range u.Capabilities {
+			info.Capabilities = append(info.Capabilities, string(c))
+		}
+		resp.Providers = append(resp.Providers, info)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

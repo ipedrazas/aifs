@@ -146,9 +146,32 @@ export interface paths {
         post?: never;
         /**
          * Delete a reference photograph record
-         * @description The stored bytes are removed when no other record uses them.
+         * @description The stored bytes are removed when no other record uses them. Deleting an original also deletes its processed version; deleting a processed version reverts generation to the original.
          */
         delete: operations["deleteProductImage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{id}/images/{imageId}/process": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+                imageId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create the processed version of an original photograph
+         * @description Removes the background, trims to the garment and/or resizes. Background removal takes only a mask from the provider and applies it to the original pixels. The result is a new photograph linked to the original, which is kept unchanged; generation uses it instead of the original. It replaces any previous processed version. The request waits for the work (a few seconds with background removal).
+         */
+        post: operations["processProductImage"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -566,6 +589,43 @@ export interface components {
             height: number;
             /** Format: date-time */
             createdAt: string;
+            /**
+             * Format: int64
+             * @description Set on a processed version; the original it was made from.
+             */
+            sourceImageId: number | null;
+            /** @description How a processed version was made (null on originals). */
+            processing: components["schemas"]["Processing"] | null;
+            /**
+             * Format: int64
+             * @description Set on an original that has a processed version; generation uses that version instead.
+             */
+            processedImageId: number | null;
+        };
+        /** @enum {string} */
+        ProcessingStep: "remove_background" | "trim" | "resize";
+        Processing: {
+            steps: components["schemas"]["ProcessingStep"][];
+            /** @description Provider that removed the background. */
+            provider?: string;
+            providerModel?: string;
+            providerJobId?: string;
+            trimMarginPct?: number;
+            maxEdge?: number;
+            /** Format: int64 */
+            costMicros: number;
+            /** Format: int64 */
+            durationMs: number;
+        };
+        /** @description At least one step is required. */
+        ProcessOptions: {
+            removeBackground?: boolean;
+            /** @description Crop to the garment plus a small margin; needs a transparent background. */
+            trim?: boolean;
+            /** @description Scale down so the long edge is at most this many pixels (0 or absent = no resize). */
+            maxEdge?: number;
+            /** @description Background-removal provider; defaults to the first configured one. */
+            provider?: string;
         };
         /**
          * @description `identity`: face and likeness; `full_body`: build and proportions.
@@ -758,6 +818,8 @@ export interface components {
             /** @description Product view or model image role. */
             label: string;
             hash: string;
+            /** @description The garment photograph is a processed version (background removed, trimmed or resized). */
+            processed?: boolean;
         };
         /** @description The complete, immutable record of what produced a generation's images. */
         Snapshot: {
@@ -960,7 +1022,7 @@ export interface components {
          * @default pipeline
          * @enum {string}
          */
-        MetricsGrouping: "pipeline" | "recipe" | "provider" | "product" | "printComplexity" | "garmentRefs" | "preset";
+        MetricsGrouping: "pipeline" | "recipe" | "provider" | "product" | "printComplexity" | "garmentRefs" | "garmentProcessing" | "preset";
         Metrics: {
             generations: number;
             /** @description Images requested. */
@@ -1420,6 +1482,54 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["Error"];
+        };
+    };
+    processProductImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ProductId"];
+                imageId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProcessOptions"];
+            };
+        };
+        responses: {
+            /** @description The processed version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductImage"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["Error"];
+            /** @description Invalid options (`invalid`): no step, a bad size, trimming an opaque photograph, no background-removal service configured, or the photograph is itself a processed version */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The background-removal service failed (`provider_failed`) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listModels: {

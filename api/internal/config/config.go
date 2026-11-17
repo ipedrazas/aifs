@@ -56,6 +56,29 @@ type Config struct {
 	// Gemini is the reference-guided image provider, reached through
 	// OpenRouter; enabled when the OpenRouter key is set.
 	Gemini GeminiConfig
+	// Replicate removes backgrounds from product photographs; enabled when
+	// the token is set.
+	Replicate ReplicateConfig
+
+	// ProviderMaxEdge and ProviderMaxBytes bound the reference photographs
+	// sent to providers; larger ones are scaled down at send time.
+	ProviderMaxEdge  int
+	ProviderMaxBytes int
+}
+
+// ReplicateConfig configures background removal on Replicate.
+type ReplicateConfig struct {
+	APIToken string
+	// Model is "owner/name:version"; validated by the adapter.
+	Model string
+	// UnitPriceMicros is the price per call in micro-USD.
+	UnitPriceMicros int64
+	BaseURL         string
+}
+
+// String never prints the token.
+func (r ReplicateConfig) String() string {
+	return fmt.Sprintf("{model:%s token-set:%v}", r.Model, r.APIToken != "")
 }
 
 // GeminiConfig configures the Gemini provider (via OpenRouter).
@@ -201,6 +224,33 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		c.Gemini.UnitPriceMicros = int64(price*1_000_000 + 0.5)
 	}
+
+	// AIFS_REPLICATE_API_TOKEN wins; REPLICATE_API_TOKEN is the name
+	// Replicate's own tools use.
+	if c.Replicate.APIToken, err = secretEnv(getenv, "AIFS_REPLICATE_API_TOKEN"); err != nil {
+		return Config{}, err
+	}
+	if c.Replicate.APIToken == "" {
+		if c.Replicate.APIToken, err = secretEnv(getenv, "REPLICATE_API_TOKEN"); err != nil {
+			return Config{}, err
+		}
+	}
+	c.Replicate.Model = getenv("AIFS_REPLICATE_BACKGROUND_MODEL")
+	c.Replicate.BaseURL = getenv("AIFS_REPLICATE_BASE_URL")
+	rprice, err := strconv.ParseFloat(valueOr(getenv("AIFS_REPLICATE_UNIT_PRICE_USD"), "0.0005"), 64)
+	if err != nil || rprice < 0 {
+		return Config{}, fmt.Errorf("AIFS_REPLICATE_UNIT_PRICE_USD must be a non-negative number, got %q", getenv("AIFS_REPLICATE_UNIT_PRICE_USD"))
+	}
+	c.Replicate.UnitPriceMicros = int64(rprice*1_000_000 + 0.5)
+
+	if c.ProviderMaxEdge, err = intEnv(getenv, "AIFS_PROVIDER_MAX_EDGE", 3072, 512, 8192); err != nil {
+		return Config{}, err
+	}
+	maxMB, err := intEnv(getenv, "AIFS_PROVIDER_MAX_MB", 10, 1, 30)
+	if err != nil {
+		return Config{}, err
+	}
+	c.ProviderMaxBytes = maxMB << 20
 
 	return c, nil
 }

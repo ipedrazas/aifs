@@ -11,6 +11,7 @@ import (
 
 	"github.com/ipedrazas/aifs/api/internal/catalog"
 	"github.com/ipedrazas/aifs/api/internal/imaging"
+	"github.com/ipedrazas/aifs/api/internal/processing"
 )
 
 type productHandlers struct {
@@ -198,6 +199,35 @@ func (h productHandlers) deleteImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// processImage creates the processed version of an original photograph
+// (background removed, trimmed, resized), replacing any previous one. It
+// waits for the work, which takes a few seconds with background removal.
+func (h productHandlers) processImage(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	imageID, ok := pathID(w, r, "imageId")
+	if !ok {
+		return
+	}
+	var opt processing.Options
+	if !decodeJSON(w, r, &opt) {
+		return
+	}
+	im, err := h.d.Processing.Process(r.Context(), id, imageID, opt)
+	var pe *processing.ProviderError
+	if errors.As(err, &pe) {
+		writeError(w, http.StatusBadGateway, "provider_failed", pe.Msg)
+		return
+	}
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, im)
 }
 
 func formatMB(n int64) string {

@@ -26,11 +26,14 @@ import (
 	"github.com/ipedrazas/aifs/api/internal/config"
 	"github.com/ipedrazas/aifs/api/internal/db"
 	"github.com/ipedrazas/aifs/api/internal/httpapi"
+	"github.com/ipedrazas/aifs/api/internal/imaging"
 	"github.com/ipedrazas/aifs/api/internal/media"
+	"github.com/ipedrazas/aifs/api/internal/processing"
 	"github.com/ipedrazas/aifs/api/internal/provider"
 	"github.com/ipedrazas/aifs/api/internal/provider/fake"
 	"github.com/ipedrazas/aifs/api/internal/provider/fashn"
 	"github.com/ipedrazas/aifs/api/internal/provider/gemini"
+	"github.com/ipedrazas/aifs/api/internal/provider/replicate"
 	"github.com/ipedrazas/aifs/api/internal/studio"
 	"github.com/ipedrazas/aifs/api/internal/version"
 	"github.com/ipedrazas/aifs/api/internal/webui"
@@ -138,6 +141,7 @@ func serve() error {
 	} else {
 		providers.AddUnavailable(provider.Unavailable{
 			Name: fashn.Name, Label: "FASHN virtual try-on", Reason: "set AIFS_FASHN_API_KEY to enable it",
+			Capabilities: []provider.Capability{provider.TryOn},
 		})
 	}
 
@@ -157,12 +161,32 @@ func serve() error {
 	} else {
 		providers.AddUnavailable(provider.Unavailable{
 			Name: gemini.Name, Label: "Gemini image (OpenRouter)", Reason: "set AIFS_OPENROUTER_API_KEY to enable it",
+			Capabilities: []provider.Capability{provider.ReferenceGenerate, provider.Edit},
+		})
+	}
+
+	if cfg.Replicate.APIToken != "" {
+		rp, err := replicate.New(replicate.Config{
+			APIToken: cfg.Replicate.APIToken,
+			Model:    cfg.Replicate.Model,
+			BaseURL:  cfg.Replicate.BaseURL,
+		})
+		if err != nil {
+			return err
+		}
+		providers.Add(rp, cfg.Replicate.UnitPriceMicros)
+		log.Info("Replicate background removal enabled", "model", rp.Model(provider.RemoveBackground))
+	} else {
+		providers.AddUnavailable(provider.Unavailable{
+			Name: replicate.Name, Label: "Replicate background removal", Reason: "set AIFS_REPLICATE_API_TOKEN to enable it",
+			Capabilities: []provider.Capability{provider.RemoveBackground},
 		})
 	}
 
 	runner := studio.NewRunner(database, blobs, providers, log, studio.RunnerConfig{
 		Workers:     cfg.Workers,
 		StepTimeout: cfg.StepTimeout,
+		InputLimits: imaging.ProviderLimits{MaxEdge: cfg.ProviderMaxEdge, MaxBytes: cfg.ProviderMaxBytes},
 	})
 	studioSvc := studio.New(database, blobs, cat, providers, runner, log, studio.Config{MaxVariations: cfg.MaxVariations})
 
@@ -181,6 +205,7 @@ func serve() error {
 			Media:          media.New(database, blobs),
 			MaxUploadBytes: cfg.MaxUploadBytes,
 			Studio:         studioSvc,
+			Processing:     processing.New(cat, providers, log, processing.Config{}),
 			Providers:      providers,
 			MaxVariations:  cfg.MaxVariations,
 		}),

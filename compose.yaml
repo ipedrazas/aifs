@@ -31,6 +31,16 @@ services:
 
       AIFS_OPENROUTER_API_KEY: ${AIFS_OPENROUTER_API_KEY:-${OPENROUTER_API_KEY:-}}
 
+      # Background removal for product photographs.
+      AIFS_REPLICATE_API_TOKEN: ${AIFS_REPLICATE_API_TOKEN:-${REPLICATE_API_TOKEN:-}}
+      AIFS_REPLICATE_UNIT_PRICE_USD: ${AIFS_REPLICATE_UNIT_PRICE_USD:-}
+
+      # Upload limit, and the size reference photographs are scaled to before
+      # they are sent to a provider (the stored originals are kept).
+      AIFS_MAX_UPLOAD_MB: ${AIFS_MAX_UPLOAD_MB:-}
+      AIFS_PROVIDER_MAX_EDGE: ${AIFS_PROVIDER_MAX_EDGE:-}
+      AIFS_PROVIDER_MAX_MB: ${AIFS_PROVIDER_MAX_MB:-}
+
     volumes:
       - aifs-data:/data
     read_only: true

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, unwrap, type PrintComplexity, type ProductInput, type View } from './client'
+import { api, unwrap, type PrintComplexity, type ProcessOptions, type ProductInput, type View } from './client'
 
 export const VIEWS: View[] = ['front', 'back', 'side', 'detail', 'print']
 
@@ -98,6 +98,27 @@ export function useDeleteImage(productId: number) {
     },
     onSuccess: () => client.invalidateQueries({ queryKey: keys.all }),
   })
+}
+
+/** Creates the processed version of an original photograph (replacing any previous one). */
+export function useProcessImage(productId: number) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ imageId, options }: { imageId: number; options: ProcessOptions }) =>
+      unwrap(
+        await api.POST('/api/v1/products/{id}/images/{imageId}/process', {
+          params: { path: { id: productId, imageId } },
+          body: options,
+        }),
+      ),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.all }),
+  })
+}
+
+export const STEP_LABELS: Record<string, string> = {
+  remove_background: 'background removed',
+  trim: 'trimmed',
+  resize: 'resized',
 }
 
 export const COMPLEXITY_LABELS: Record<PrintComplexity, string> = {

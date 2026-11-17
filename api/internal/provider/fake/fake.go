@@ -29,7 +29,7 @@ import (
 	"sync"
 	"time"
 
-	_ "image/png" // register decoder
+	"image/png"
 
 	xdraw "golang.org/x/image/draw"
 	_ "golang.org/x/image/webp" // register decoder
@@ -71,7 +71,7 @@ func (p *Provider) Label() string { return "Fake (offline test provider)" }
 
 // Capabilities implements provider.Provider.
 func (p *Provider) Capabilities() []provider.Capability {
-	return []provider.Capability{provider.TryOn, provider.ReferenceGenerate, provider.Edit, provider.GenerateModel}
+	return []provider.Capability{provider.TryOn, provider.ReferenceGenerate, provider.Edit, provider.GenerateModel, provider.RemoveBackground}
 }
 
 // Model implements provider.Provider.
@@ -87,6 +87,9 @@ func (p *Provider) Submit(_ context.Context, req provider.Request) (string, erro
 	}
 	if req.Capability == provider.TryOn && (req.Source == nil || len(req.Garments) == 0) {
 		return "", errors.New("fake: try-on needs a person image and a garment image")
+	}
+	if req.Capability == provider.RemoveBackground && req.Source == nil {
+		return "", errors.New("fake: background removal needs an image")
 	}
 
 	p.mu.Lock()
@@ -126,14 +129,18 @@ func (p *Provider) Poll(_ context.Context, jobID string) (provider.Result, error
 	if strings.Contains(j.req.Prompt, "[fake:fail]") {
 		return provider.Result{Status: provider.Failed, Error: "fake: the provider could not produce an image (simulated)"}, nil
 	}
-	img, renderErr := Render(j.req)
+	render, ct := Render, "image/jpeg"
+	if j.req.Capability == provider.RemoveBackground {
+		render, ct = Mask, "image/png"
+	}
+	img, renderErr := render(j.req)
 	if renderErr != nil {
 		// A bad input is a failed job, not a failure to poll.
 		return provider.Result{Status: provider.Failed, Error: "fake: " + renderErr.Error()}, nil //nolint:nilerr // reported in the result
 	}
 	return provider.Result{
 		Status:       provider.Succeeded,
-		Images:       []provider.Output{{ContentType: "image/jpeg", Data: img}},
+		Images:       []provider.Output{{ContentType: ct, Data: img}},
 		CostMicros:   CostMicros,
 		CostReported: true,
 	}, nil
@@ -173,6 +180,39 @@ func Render(req provider.Request) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// Mask is the fake background removal: every pixel whose colour is close
+// to the top-left pixel's counts as background (black), everything else as
+// the subject (white). The mask is a PNG at the source's size.
+func Mask(req provider.Request) ([]byte, error) {
+	src, _, err := image.Decode(bytes.NewReader(req.Source.Data))
+	if err != nil {
+		return nil, fmt.Errorf("image: %w", err)
+	}
+	b := src.Bounds()
+	br, bg, bb, _ := src.At(b.Min.X, b.Min.Y).RGBA()
+	m := image.NewGray(image.Rect(0, 0, b.Dx(), b.Dy()))
+	for y := range b.Dy() {
+		for x := range b.Dx() {
+			r, g, bl, _ := src.At(b.Min.X+x, b.Min.Y+y).RGBA()
+			if diff(r, br)+diff(g, bg)+diff(bl, bb) > 3*40<<8 {
+				m.SetGray(x, y, color.Gray{Y: 255})
+			}
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, m); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func diff(a, b uint32) uint32 {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }
 
 // paste scales src to fit inside r, preserving aspect ratio.

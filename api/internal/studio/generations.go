@@ -111,6 +111,9 @@ type GenerationInput struct {
 	Role     string `json:"role"`  // garment or model
 	Label    string `json:"label"` // product view or model image role
 	Hash     string `json:"hash"`
+	// Processed marks a garment photograph that is a processed version
+	// (background removed, trimmed or resized) rather than an upload.
+	Processed bool `json:"processed,omitempty"`
 }
 
 // Generation is a request for N variations through a recipe.
@@ -230,20 +233,29 @@ func (s *Service) StartGeneration(ctx context.Context, photoshootID int64, req G
 	if err != nil {
 		return Generation{}, err
 	}
+	// Processed versions replace their originals.
+	images := prod.GenerationImages()
 	if req.GarmentImageID != 0 {
-		idx := -1
-		for i, im := range prod.Images {
-			if im.ID == req.GarmentImageID {
-				idx = i
+		var chosen *catalog.ProductImage
+		for i := range prod.Images {
+			if prod.Images[i].ID == req.GarmentImageID {
+				chosen = &prod.Images[i]
 			}
 		}
-		if idx < 0 {
+		if chosen == nil {
 			return Generation{}, invalid("garmentImageId", "not a photograph of this product")
 		}
-		// Move the chosen photograph to the front, keeping the others' order.
-		chosen := prod.Images[idx]
-		prod.Images = append([]catalog.ProductImage{chosen}, append(prod.Images[:idx:idx], prod.Images[idx+1:]...)...)
+		// Put the chosen photograph first, keeping the others' order. An
+		// original chosen explicitly is sent instead of its processed version.
+		rest := []catalog.ProductImage{*chosen}
+		for _, im := range images {
+			if im.ID != chosen.ID && (chosen.ProcessedImageID == nil || im.ID != *chosen.ProcessedImageID) {
+				rest = append(rest, im)
+			}
+		}
+		images = rest
 	}
+	prod.Images = images
 
 	snap := s.plan(recipe, provs, ps, preset, prod, model, req.Variations)
 	settings, err := json.Marshal(snap)
@@ -369,7 +381,7 @@ func (s *Service) plan(recipe Recipe, provs []provider.Provider, ps Photoshoot, 
 			break
 		}
 		pos := len(snap.Inputs) + 1
-		snap.Inputs = append(snap.Inputs, GenerationInput{Position: pos, Role: "garment", Label: im.View, Hash: im.Hash})
+		snap.Inputs = append(snap.Inputs, GenerationInput{Position: pos, Role: "garment", Label: im.View, Hash: im.Hash, Processed: !im.Original()})
 		garments = append(garments, pos)
 	}
 	for i, im := range model.Images {

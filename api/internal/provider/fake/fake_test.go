@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"image/jpeg"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,5 +128,29 @@ func TestCanvasSize(t *testing.T) {
 		if w != want[0] || h != want[1] {
 			t.Errorf("%s: %dx%d", in, w, h)
 		}
+	}
+}
+
+func TestMask(t *testing.T) {
+	ctx := context.Background()
+	p := New(0)
+	// plain.png: the fixture is two flat colours.
+	id, err := p.Submit(ctx, provider.Request{Capability: provider.RemoveBackground, Source: &provider.Image{Data: fixture(t, "plain.png")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.Poll(ctx, id)
+	if err != nil || res.Status != provider.Succeeded || res.Images[0].ContentType != "image/png" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	m, err := png.Decode(bytes.NewReader(res.Images[0].Data))
+	if err != nil || m.Bounds().Dx() != 40 || m.Bounds().Dy() != 20 {
+		t.Fatalf("mask: %v %v", m, err)
+	}
+	if r, _, _, _ := m.At(0, 0).RGBA(); r != 0 {
+		t.Fatal("the corner colour is background")
+	}
+	if _, err := p.Submit(ctx, provider.Request{Capability: provider.RemoveBackground}); err == nil {
+		t.Fatal("no image accepted")
 	}
 }

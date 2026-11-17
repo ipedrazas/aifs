@@ -19,6 +19,7 @@ import (
 	"github.com/ipedrazas/aifs/api/internal/catalog"
 	"github.com/ipedrazas/aifs/api/internal/db"
 	"github.com/ipedrazas/aifs/api/internal/media"
+	"github.com/ipedrazas/aifs/api/internal/processing"
 	"github.com/ipedrazas/aifs/api/internal/provider"
 	"github.com/ipedrazas/aifs/api/internal/provider/fake"
 	"github.com/ipedrazas/aifs/api/internal/studio"
@@ -69,7 +70,7 @@ func newTestServerDB(t *testing.T, fdb fakeDB, web fstest.MapFS, maxUpload int64
 	cat := catalog.New(d, store, log)
 	reg := provider.NewRegistry()
 	reg.Add(fake.New(0), 0)
-	reg.AddUnavailable(provider.Unavailable{Name: "fashn", Label: "FASHN virtual try-on", Reason: "set AIFS_FASHN_API_KEY"})
+	reg.AddUnavailable(provider.Unavailable{Name: "fashn", Label: "FASHN virtual try-on", Reason: "set AIFS_FASHN_API_KEY", Capabilities: []provider.Capability{provider.TryOn}})
 	runner := studio.NewRunner(d, store, reg, log, studio.RunnerConfig{
 		PollInterval: 5 * time.Millisecond, ScanInterval: 20 * time.Millisecond, RetryBase: time.Millisecond,
 	})
@@ -89,6 +90,7 @@ func newTestServerDB(t *testing.T, fdb fakeDB, web fstest.MapFS, maxUpload int64
 		MaxUploadBytes: maxUpload,
 		Studio:         studio.New(d, store, cat, reg, runner, log, studio.Config{MaxVariations: 4}),
 		Providers:      reg,
+		Processing:     processing.New(cat, reg, log, processing.Config{PollInterval: time.Millisecond}),
 		MaxVariations:  4,
 	}), d
 }

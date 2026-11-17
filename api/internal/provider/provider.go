@@ -26,6 +26,10 @@ const (
 	Edit Capability = "edit"
 	// GenerateModel creates a new person from a description.
 	GenerateModel Capability = "generate_model"
+	// RemoveBackground returns a mask of Source: white where the subject
+	// is, black where the background is. Callers apply the mask themselves,
+	// so the subject's pixels are never redrawn.
+	RemoveBackground Capability = "remove_background"
 )
 
 // Image is an input image.
@@ -146,6 +150,8 @@ type Unavailable struct {
 	Name   string
 	Label  string
 	Reason string
+	// Capabilities the provider would offer once configured.
+	Capabilities []Capability
 }
 
 // NewRegistry returns an empty registry.

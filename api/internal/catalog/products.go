@@ -3,11 +3,16 @@ package catalog
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/ipedrazas/aifs/api/internal/blob"
 	"github.com/ipedrazas/aifs/api/internal/imaging"
 )
 
@@ -53,6 +58,53 @@ type ProductImage struct {
 	Width       int       `json:"width"`
 	Height      int       `json:"height"`
 	CreatedAt   time.Time `json:"createdAt"`
+	// SourceImageID is set on a processed version: the original it was made
+	// from.
+	SourceImageID *int64 `json:"sourceImageId"`
+	// Processing records how a processed version was made (nil on originals).
+	Processing *Processing `json:"processing"`
+	// ProcessedImageID is set on an original that has a processed version.
+	// Generation uses that version instead of the original.
+	ProcessedImageID *int64 `json:"processedImageId"`
+}
+
+// Processing steps.
+const (
+	StepRemoveBackground = "remove_background"
+	StepTrim             = "trim"
+	StepResize           = "resize"
+)
+
+// Processing records how a processed version was made.
+type Processing struct {
+	// Steps are applied in order: remove_background, trim, resize.
+	Steps []string `json:"steps"`
+	// Provider and ProviderModel ran background removal.
+	Provider      string `json:"provider,omitempty"`
+	ProviderModel string `json:"providerModel,omitempty"`
+	ProviderJobID string `json:"providerJobId,omitempty"`
+	// TrimMarginPct is the margin kept around the garment when trimming.
+	TrimMarginPct float64 `json:"trimMarginPct,omitempty"`
+	// MaxEdge is the long-edge limit of the resize step.
+	MaxEdge    int   `json:"maxEdge,omitempty"`
+	CostMicros int64 `json:"costMicros"`
+	DurationMs int64 `json:"durationMs"`
+}
+
+// Original reports whether im is an uploaded photograph, not a processed
+// version.
+func (im ProductImage) Original() bool { return im.SourceImageID == nil }
+
+// GenerationImages returns the photographs generation uses: processed
+// versions in place of their originals, in view order.
+func (p Product) GenerationImages() []ProductImage {
+	out := []ProductImage{}
+	for _, im := range p.Images {
+		if im.ProcessedImageID == nil {
+			out = append(out, im)
+		}
+	}
+	return out
 }
 
 // ProductInput holds every editable product field. On update, nil fields are left
@@ -176,9 +228,11 @@ func (s *Service) UpdateProduct(ctx context.Context, id int64, in ProductInput) 
 }
 
 const productCols = `p.id, p.name, COALESCE(p.sku, ''), p.category, p.description, p.colour, p.print_details, p.notes,
-	p.test_set, p.print_complexity, p.created_at, p.updated_at, (SELECT count(*) FROM product_image WHERE product_id = p.id)`
+	p.test_set, p.print_complexity, p.created_at, p.updated_at,
+	(SELECT count(*) FROM product_image WHERE product_id = p.id AND source_image_id IS NULL)`
 
-const productImageCols = `i.id, i.product_id, i.blob_hash, i.view, i.filename, b.content_type, b.size, b.width, b.height, i.created_at`
+const productImageCols = `i.id, i.product_id, i.blob_hash, i.view, i.filename, b.content_type, b.size, b.width, b.height, i.created_at,
+	i.source_image_id, i.processing, (SELECT c.id FROM product_image c WHERE c.source_image_id = i.id)`
 
 // viewOrder sorts photographs front, back, side, detail, print.
 const viewOrder = `CASE view WHEN 'front' THEN 0 WHEN 'back' THEN 1 WHEN 'side' THEN 2 WHEN 'detail' THEN 3 ELSE 4 END`
@@ -194,9 +248,16 @@ func scanProduct(row scanner) (Product, error) {
 
 func scanProductImage(row scanner) (ProductImage, error) {
 	var im ProductImage
-	var created string
-	err := row.Scan(&im.ID, &im.ProductID, &im.Hash, &im.View, &im.Filename, &im.ContentType, &im.Size, &im.Width, &im.Height, &created)
+	var created, processing string
+	err := row.Scan(&im.ID, &im.ProductID, &im.Hash, &im.View, &im.Filename, &im.ContentType, &im.Size, &im.Width, &im.Height, &created,
+		&im.SourceImageID, &processing, &im.ProcessedImageID)
 	im.CreatedAt = parseTime(created)
+	if err == nil && processing != "" {
+		im.Processing = &Processing{}
+		if jerr := json.Unmarshal([]byte(processing), im.Processing); jerr != nil {
+			return im, fmt.Errorf("product image %d: processing record: %w", im.ID, jerr)
+		}
+	}
 	return im, err
 }
 
@@ -235,8 +296,9 @@ func (s *Service) productCovers(ctx context.Context) (map[int64]ProductImage, er
 	rows, err := s.db.Read.QueryContext(ctx, `
 		SELECT `+productImageCols+` FROM product_image i JOIN blob b ON b.hash = i.blob_hash
 		WHERE i.id = (
-			SELECT id FROM product_image WHERE product_id = i.product_id
-			ORDER BY `+viewOrder+`, id LIMIT 1
+			SELECT x.id FROM product_image x WHERE x.product_id = i.product_id
+				AND NOT EXISTS (SELECT 1 FROM product_image c WHERE c.source_image_id = x.id)
+			ORDER BY `+viewOrder+`, x.id LIMIT 1
 		)`)
 	if err != nil {
 		return nil, err
@@ -282,9 +344,10 @@ func (s *Service) GetProduct(ctx context.Context, id int64) (Product, error) {
 	if err := rows.Err(); err != nil {
 		return Product{}, err
 	}
-	// Images are ordered front first, so the first one is the cover.
-	if len(p.Images) > 0 {
-		c := p.Images[0]
+	// Images are ordered front first, so the first one generation uses is
+	// the cover.
+	if gen := p.GenerationImages(); len(gen) > 0 {
+		c := gen[0]
 		p.Cover = &c
 	}
 	return p, nil
@@ -387,14 +450,109 @@ func (s *Service) DeleteProductImage(ctx context.Context, productID, imageID int
 	if err != nil {
 		return err
 	}
+	// Deleting an original also deletes its processed version (cascade).
+	hashes, err := s.imageHashes(ctx, `SELECT blob_hash FROM product_image WHERE id = ? OR source_image_id = ?`, imageID, imageID)
+	if err != nil {
+		return err
+	}
 	if _, err := s.db.Write.ExecContext(ctx, `DELETE FROM product_image WHERE id = ?`, imageID); err != nil {
 		return err
 	}
 	if _, err := s.db.Write.ExecContext(ctx, `UPDATE product SET updated_at = ? WHERE id = ?`, s.timestamp(), productID); err != nil {
 		return err
 	}
-	s.collect(ctx, []string{im.Hash})
+	s.collect(ctx, append(hashes, im.Hash))
 	return nil
+}
+
+// ReadProductImage returns a photograph record and its stored bytes.
+func (s *Service) ReadProductImage(ctx context.Context, productID, imageID int64) (ProductImage, []byte, error) {
+	im, err := s.productImage(ctx, productID, imageID)
+	if err != nil {
+		return ProductImage{}, nil, err
+	}
+	o, err := s.blobs.Open(ctx, blob.Original, im.Hash)
+	if err != nil {
+		return ProductImage{}, nil, fmt.Errorf("read photograph %d: %w", imageID, err)
+	}
+	defer func() { _ = o.Close() }()
+	data, err := io.ReadAll(o)
+	return im, data, err
+}
+
+// AddProcessedImage stores a processed version of an original photograph.
+// It replaces the original's previous processed version, if any. The
+// original is never changed.
+func (s *Service) AddProcessedImage(ctx context.Context, productID, sourceID int64, data []byte, proc Processing) (ProductImage, error) {
+	info, err := imaging.Validate(data)
+	if err != nil {
+		return ProductImage{}, err
+	}
+	record, err := json.Marshal(proc)
+	if err != nil {
+		return ProductImage{}, err
+	}
+
+	s.blobMu.Lock()
+	defer s.blobMu.Unlock()
+
+	src, err := s.productImage(ctx, productID, sourceID)
+	if err != nil {
+		return ProductImage{}, err
+	}
+	if !src.Original() {
+		return ProductImage{}, &ValidationError{Fields: map[string]string{"imageId": "only an original photograph can be processed"}}
+	}
+	old, err := s.imageHashes(ctx, `SELECT blob_hash FROM product_image WHERE source_image_id = ?`, sourceID)
+	if err != nil {
+		return ProductImage{}, err
+	}
+
+	tx, err := s.db.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return ProductImage{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM product_image WHERE source_image_id = ?`, sourceID); err != nil {
+		return ProductImage{}, err
+	}
+	now := s.timestamp()
+	hash, err := s.storeOriginal(ctx, tx, data, info, now)
+	if err != nil {
+		return ProductImage{}, err
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO product_image (product_id, blob_hash, view, filename, created_at, source_image_id, processing)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		productID, hash, src.View, processedName(src.Filename, info.ContentType), now, sourceID, string(record))
+	if isUnique(err) {
+		return ProductImage{}, &ConflictError{Reason: "the processed photograph is identical to another photograph of this product"}
+	}
+	if err != nil {
+		return ProductImage{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE product SET updated_at = ? WHERE id = ?`, now, productID); err != nil {
+		return ProductImage{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ProductImage{}, err
+	}
+	s.collect(ctx, old)
+	id, _ := res.LastInsertId()
+	return s.productImage(ctx, productID, id)
+}
+
+// processedName derives a display name: "front.jpg" → "front-processed.png".
+func processedName(name, contentType string) string {
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	if base == "" {
+		base = "photo"
+	}
+	ext := ".jpg"
+	if contentType == imaging.TypePNG {
+		ext = ".png"
+	}
+	return base + "-processed" + ext
 }
 
 func validView(v string) bool {
