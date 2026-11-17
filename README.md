@@ -75,6 +75,11 @@ All configuration comes from environment variables.
 | `AIFS_GEMINI_MODEL` | `google/gemini-3-pro-image` | OpenRouter model id, e.g. `google/gemini-3.1-flash-image` or `google/gemini-2.5-flash-image` (at most 3 reference images) |
 | `AIFS_GEMINI_RESOLUTION` | `2K` | `1K`, `2K` or `4K` (ignored by `gemini-2.5-flash-image`) |
 | `AIFS_GEMINI_UNIT_PRICE_USD` | `0.14` | Price per image for estimates, and recorded when OpenRouter does not report the cost |
+| `AIFS_REPLICATE_API_TOKEN` | | Enables background removal for product photographs on Replicate (or `AIFS_REPLICATE_API_TOKEN_FILE`; `REPLICATE_API_TOKEN` is also read). Get a token at https://replicate.com/account/api-tokens |
+| `AIFS_REPLICATE_BACKGROUND_MODEL` | `851-labs/background-remover:a029dff3…` | Background-removal model as `owner/name:version`; it must accept `background_type: "map"` and return a mask |
+| `AIFS_REPLICATE_UNIT_PRICE_USD` | `0.0005` | Price per background removal, for estimates and records (Replicate reports no cost) |
+| `AIFS_PROVIDER_MAX_EDGE` | `3072` | Reference photographs with a longer side are scaled down before they are sent to a provider (512–8192) |
+| `AIFS_PROVIDER_MAX_MB` | `10` | Reference photographs larger than this are re-encoded before they are sent to a provider |
 | `AIFS_COOKIE_SECURE` | `true` | Mark the session cookie `Secure`. Set `false` only when serving over plain HTTP on a non-localhost address |
 
 ## Data
@@ -95,7 +100,18 @@ Each step of a recipe can use a different provider: for example `tryon` with a G
 
 Presets set the scene (environment, pose, framing, lighting, style). Four built-in, read-only presets ship with the app: clean studio catalogue, urban lifestyle, coffee shop and outdoor. A photoshoot has a default preset and each generation can choose another; the preset is stored in the generation's snapshot. Presets never describe the garment: prompts carry only the product fields the user typed, and the reference photographs define the garment.
 
-Provider tests replay recorded responses; CI never calls a real provider. To check a provider against the live API (spends money): `AIFS_FASHN_API_KEY=... task test:live:fashn` or `AIFS_OPENROUTER_API_KEY=... task test:live:gemini`.
+Reference photographs can be uploaded straight from a phone or camera. Before one is sent to a provider it is turned upright, flattened onto white if it has transparency and, when it is larger than `AIFS_PROVIDER_MAX_EDGE` or `AIFS_PROVIDER_MAX_MB`, scaled down and re-encoded as JPEG. The stored original is never changed, and the conversion is deterministic, so the recorded hash still identifies what was sent.
+
+Provider tests replay recorded responses; CI never calls a real provider. To check a provider against the live API (spends money): `AIFS_FASHN_API_KEY=... task test:live:fashn`, `AIFS_OPENROUTER_API_KEY=... task test:live:gemini` or `AIFS_REPLICATE_API_TOKEN=... task test:live:replicate`.
+
+## Processing product photographs
+
+From the product page, any uploaded photograph can be processed on request: **remove the background**, **trim** to the garment (plus a 3% margin) and **resize** to a maximum long edge. **Process all** does the same for every photograph without a processed version, one at a time.
+
+- Background removal runs on Replicate (`851-labs/background-remover`, pinned to a version). Only the mask comes from the service; it is applied to the original pixels, so every garment pixel is the uploaded one. The result is a lossless PNG. Each removal costs about $0.0005, and the cost is recorded.
+- The processed version is a new photograph linked to its original, with a record of the steps, provider, model and cost. The original is kept unchanged and can be shown beside it.
+- Generation uses the processed version in place of its original. **Revert to original** deletes the processed version; processing again replaces it. A generation's snapshot records whether each garment photograph was processed, and the Metrics page can group by it.
+- Nothing redraws the garment: there is no generative "enhance".
 
 ## Review
 
@@ -103,7 +119,7 @@ Every generated image starts as pending and only a human decision in the Review 
 
 ## Metrics and the fidelity gate
 
-The Metrics page reports the PRD §10 success metrics, in total and grouped by recipe and providers, recipe, providers, product, print complexity, number of garment photographs sent, or preset. It can be filtered by provider, recipe, product, date range and test set. Rates are over reviewed images (pending images are counted, not rated). The fidelity pass rate is the share of reviewed images not rejected for fidelity. Cost per approved image includes failed and rejected work.
+The Metrics page reports the PRD §10 success metrics, in total and grouped by recipe and providers, recipe, providers, product, print complexity, number of garment photographs sent, original or processed photographs, or preset. It can be filtered by provider, recipe, product, date range and test set. Rates are over reviewed images (pending images are counted, not rated). The fidelity pass rate is the share of reviewed images not rejected for fidelity. Cost per approved image includes failed and rejected work.
 
 Products can be marked as part of the fidelity test set and rated by print complexity.
 

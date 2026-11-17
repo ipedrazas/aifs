@@ -36,7 +36,7 @@ const providers = {
         label: 'FASHN virtual try-on',
         available: false,
         reason: 'set AIFS_FASHN_API_KEY to enable it',
-        capabilities: [],
+        capabilities: ['try_on'],
         models: {},
         unitPriceMicros: 0,
         recipes: [],
@@ -260,11 +260,14 @@ describe('try-on options', () => {
     const user = userEvent.setup()
     visit('/photoshoots/5')
 
-    const fashn = await screen.findByRole('option', { name: /FASHN virtual try-on — set AIFS_FASHN_API_KEY/ })
-    expect(fashn).toBeDisabled()
+    // FASHN only does try-on, so it is not offered for the reference step.
+    await screen.findByLabelText('Provider')
+    expect(screen.queryByRole('option', { name: /FASHN/ })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Garment photograph')).not.toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('Recipe'), 'tryon-photo')
+    const fashn = await screen.findByRole('option', { name: /FASHN virtual try-on — set AIFS_FASHN_API_KEY/ })
+    expect(fashn).toBeDisabled()
     await user.selectOptions(await screen.findByLabelText('Garment photograph'), '12')
     await user.click(screen.getByRole('button', { name: 'Generate' }))
     await waitFor(() => expect(sent).toEqual({ recipe: 'tryon-photo', provider: 'fake', variations: 2, presetId: 1, garmentImageId: 12 }))

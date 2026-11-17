@@ -138,3 +138,34 @@ func TestGeminiConfig(t *testing.T) {
 		t.Fatalf("precedence: %+v %v", c.Gemini, err)
 	}
 }
+
+func TestReplicateConfig(t *testing.T) {
+	c, err := Load(env(map[string]string{"REPLICATE_API_TOKEN": "r8_generic"}))
+	if err != nil || c.Replicate.APIToken != "r8_generic" || c.Replicate.UnitPriceMicros != 500 || c.Replicate.Model != "" {
+		t.Fatalf("defaults: %+v %v", c.Replicate, err)
+	}
+	if s := c.Replicate.String(); strings.Contains(s, "r8_generic") {
+		t.Fatalf("token printed: %s", s)
+	}
+	c, err = Load(env(map[string]string{"REPLICATE_API_TOKEN": "generic", "AIFS_REPLICATE_API_TOKEN": "specific", "AIFS_REPLICATE_UNIT_PRICE_USD": "0.001"}))
+	if err != nil || c.Replicate.APIToken != "specific" || c.Replicate.UnitPriceMicros != 1000 {
+		t.Fatalf("precedence: %+v %v", c.Replicate, err)
+	}
+	if _, err := Load(env(map[string]string{"AIFS_REPLICATE_UNIT_PRICE_USD": "-1"})); err == nil {
+		t.Fatal("negative price accepted")
+	}
+}
+
+func TestProviderLimits(t *testing.T) {
+	c, err := Load(env(nil))
+	if err != nil || c.ProviderMaxEdge != 3072 || c.ProviderMaxBytes != 10<<20 {
+		t.Fatalf("defaults: %d %d %v", c.ProviderMaxEdge, c.ProviderMaxBytes, err)
+	}
+	c, err = Load(env(map[string]string{"AIFS_PROVIDER_MAX_EDGE": "2048", "AIFS_PROVIDER_MAX_MB": "5"}))
+	if err != nil || c.ProviderMaxEdge != 2048 || c.ProviderMaxBytes != 5<<20 {
+		t.Fatalf("set: %d %d %v", c.ProviderMaxEdge, c.ProviderMaxBytes, err)
+	}
+	if _, err := Load(env(map[string]string{"AIFS_PROVIDER_MAX_EDGE": "100"})); err == nil {
+		t.Fatal("tiny edge accepted")
+	}
+}

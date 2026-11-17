@@ -12,6 +12,7 @@ const GROUPINGS: { value: MetricsGrouping; label: string }[] = [
   { value: 'product', label: 'Product' },
   { value: 'printComplexity', label: 'Print complexity' },
   { value: 'garmentRefs', label: 'Garment photos sent' },
+  { value: 'garmentProcessing', label: 'Original or processed photos' },
   { value: 'preset', label: 'Preset' },
 ]
 

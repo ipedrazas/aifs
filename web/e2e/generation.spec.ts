@@ -72,9 +72,9 @@ test('FASHN is listed but unavailable without a key; try-on on the model photo r
   const ps = await seedPhotoshoot(page.request, 'E2E-TRYON')
   const product = await (await page.request.get(`/api/v1/products/${ps.productId}`)).json()
   await page.goto(`/photoshoots/${ps.id}`)
+  await page.getByLabel('Recipe').selectOption('tryon-photo')
   await expect(page.getByRole('option', { name: /FASHN virtual try-on/ })).toBeDisabled()
 
-  await page.getByLabel('Recipe').selectOption('tryon-photo')
   await page.getByLabel('Garment photograph').selectOption(String(product.images[0].id))
   await page.getByLabel('Variations').fill('1')
   await page.getByRole('button', { name: 'Generate' }).click()

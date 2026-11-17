@@ -1,7 +1,6 @@
 import { Link, useNavigate, useParams } from 'react-router'
-import type { ProductImage, View } from '../../api/client'
+import type { View } from '../../api/client'
 import {
-  useDeleteImage,
   useDeleteProduct,
   useProduct,
   useUpdateProduct,
@@ -9,13 +8,13 @@ import {
   VIEW_LABELS,
   VIEWS,
 } from '../../api/products'
-import { ImageGroups } from '../../components/ImageGroups'
 import { ImageUploader } from '../../components/ImageUploader'
 import { ConfirmButton } from '../../components/ui/ConfirmButton'
 import { ErrorMessage } from '../../components/ui/ErrorMessage'
 import { NotFound } from '../NotFound'
 import { guessView } from './guessView'
 import { ProductForm } from './ProductForm'
+import { ProductPhotos } from './ProductPhotos'
 
 const VIEW_OPTIONS = VIEWS.map((v) => ({ value: v, label: VIEW_LABELS[v] }))
 
@@ -55,7 +54,7 @@ export function ProductDetail() {
       <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-6">
           <h2 className="text-lg font-semibold">Reference photographs</h2>
-          <Photos productId={product.id} images={product.images ?? []} />
+          <ProductPhotos productId={product.id} images={product.images ?? []} />
           <Uploader productId={product.id} />
         </div>
         <div className="space-y-6">
@@ -90,25 +89,6 @@ function Uploader({ productId }: { productId: number }) {
       guess={guessView}
       upload={(file, view) => upload.mutateAsync({ file, view: view as View })}
     />
-  )
-}
-
-function Photos({ productId, images }: { productId: number; images: ProductImage[] }) {
-  const del = useDeleteImage(productId)
-  if (images.length === 0) {
-    return <p className="text-stone-600">No photographs yet. Upload front, back and close-ups of any print.</p>
-  }
-  return (
-    <div className="space-y-4">
-      <ErrorMessage error={del.error} />
-      <ImageGroups
-        images={images.map((i) => ({ ...i, group: i.view }))}
-        groups={VIEW_OPTIONS}
-        onDelete={(id) => del.mutate(id)}
-        deleting={del.isPending}
-        testId="product-image"
-      />
-    </div>
   )
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/ipedrazas/aifs/api/internal/auth"
 	"github.com/ipedrazas/aifs/api/internal/catalog"
 	"github.com/ipedrazas/aifs/api/internal/media"
+	"github.com/ipedrazas/aifs/api/internal/processing"
 	"github.com/ipedrazas/aifs/api/internal/provider"
 	"github.com/ipedrazas/aifs/api/internal/studio"
 	"github.com/ipedrazas/aifs/api/internal/version"
@@ -52,6 +53,8 @@ type Deps struct {
 	Studio *studio.Service
 	// Providers are the configured AI providers.
 	Providers *provider.Registry
+	// Processing makes processed versions of product photographs.
+	Processing *processing.Service
 	// MaxVariations caps the variations in one generation.
 	MaxVariations int
 }
@@ -78,6 +81,7 @@ func New(d Deps) http.Handler {
 	api.HandleFunc("DELETE /api/v1/products/{id}", products.delete)
 	api.HandleFunc("POST /api/v1/products/{id}/images", products.uploadImage)
 	api.HandleFunc("DELETE /api/v1/products/{id}/images/{imageId}", products.deleteImage)
+	api.HandleFunc("POST /api/v1/products/{id}/images/{imageId}/process", products.processImage)
 
 	models := modelHandlers{d: d}
 	api.HandleFunc("GET /api/v1/models", models.list)

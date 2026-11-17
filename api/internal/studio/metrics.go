@@ -26,7 +26,7 @@ type MetricsFilter struct {
 }
 
 // MetricsGroupings are the dimensions metrics can be broken down by.
-var MetricsGroupings = []string{"pipeline", "recipe", "provider", "product", "printComplexity", "garmentRefs", "preset"}
+var MetricsGroupings = []string{"pipeline", "recipe", "provider", "product", "printComplexity", "garmentRefs", "garmentProcessing", "preset"}
 
 // Metrics are the PRD §10 success metrics for a set of generations. Rates
 // are over reviewed images (approved, rejected or needing refinement) and
@@ -199,8 +199,9 @@ func (s *Service) metricsGenerations(ctx context.Context, f MetricsFilter) ([]*m
 		g.keys["provider"] = [2]string{chain, chain}
 		g.keys["product"] = [2]string{strconv.FormatInt(g.productID, 10), productName}
 		g.keys["printComplexity"] = [2]string{complexity, nonEmpty(complexity, "unrated")}
-		refs := garmentRefs(snap)
+		refs, processed := garmentRefs(snap)
 		g.keys["garmentRefs"] = [2]string{strconv.Itoa(refs), fmt.Sprintf("%d garment photo%s", refs, plural(refs))}
+		g.keys["garmentProcessing"] = garmentProcessing(refs, processed)
 		g.keys["preset"] = [2]string{snap.Preset.Slug + "|" + strconv.FormatInt(snap.Preset.ID, 10), nonEmpty(snap.Preset.Name, "no preset")}
 		gens = append(gens, g)
 		byID[g.id] = g
@@ -254,17 +255,34 @@ func stepProviderChain(snap Snapshot) []string {
 	return out
 }
 
-// garmentRefs counts the distinct garment photographs sent in any step.
-func garmentRefs(snap Snapshot) int {
-	sent := map[int]bool{}
+// garmentRefs counts the distinct garment photographs sent in any step,
+// and how many of them were processed versions.
+func garmentRefs(snap Snapshot) (sent, processed int) {
+	seen := map[int]bool{}
 	for _, st := range snap.Steps {
 		for _, pos := range st.Inputs {
-			if pos >= 1 && pos <= len(snap.Inputs) && snap.Inputs[pos-1].Role == "garment" {
-				sent[pos] = true
+			if pos >= 1 && pos <= len(snap.Inputs) && snap.Inputs[pos-1].Role == "garment" && !seen[pos] {
+				seen[pos] = true
+				if snap.Inputs[pos-1].Processed {
+					processed++
+				}
 			}
 		}
 	}
-	return len(sent)
+	return len(seen), processed
+}
+
+// garmentProcessing labels a generation by the kind of garment photographs
+// it sent.
+func garmentProcessing(sent, processed int) [2]string {
+	switch processed {
+	case 0:
+		return [2]string{"original", "original photos"}
+	case sent:
+		return [2]string{"processed", "processed photos"}
+	default:
+		return [2]string{"mixed", "original and processed photos"}
+	}
 }
 
 func aggregate(gens []*metricsGeneration) Metrics {

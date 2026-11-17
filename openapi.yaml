@@ -281,7 +281,10 @@ paths:
     delete:
       operationId: deleteProductImage
       summary: Delete a reference photograph record
-      description: The stored bytes are removed when no other record uses them.
+      description: >-
+        The stored bytes are removed when no other record uses them. Deleting
+        an original also deletes its processed version; deleting a processed
+        version reverts generation to the original.
       tags: [products]
       responses:
         "204":
@@ -290,6 +293,60 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/products/{id}/images/{imageId}/process:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      operationId: processProductImage
+      summary: Create the processed version of an original photograph
+      description: >-
+        Removes the background, trims to the garment and/or resizes. Background
+        removal takes only a mask from the provider and applies it to the
+        original pixels. The result is a new photograph linked to the original,
+        which is kept unchanged; generation uses it instead of the original. It
+        replaces any previous processed version. The request waits for the
+        work (a few seconds with background removal).
+      tags: [products]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessOptions"
+      responses:
+        "201":
+          description: The processed version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductImage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          description: >-
+            Invalid options (`invalid`): no step, a bad size, trimming an
+            opaque photograph, no background-removal service configured, or
+            the photograph is itself a processed version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: The background-removal service failed (`provider_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/models:
     get:
       operationId: listModels
@@ -1037,7 +1094,7 @@ components:
             $ref: "#/components/schemas/Product"
     ProductImage:
       type: object
-      required: [id, productId, hash, view, filename, contentType, size, width, height, createdAt]
+      required: [id, productId, hash, view, filename, contentType, size, width, height, createdAt, sourceImageId, processing, processedImageId]
       properties:
         id:
           type: integer
@@ -1066,6 +1123,65 @@ components:
         createdAt:
           type: string
           format: date-time
+        sourceImageId:
+          type: [integer, "null"]
+          format: int64
+          description: Set on a processed version; the original it was made from.
+        processing:
+          oneOf:
+            - $ref: "#/components/schemas/Processing"
+            - type: "null"
+          description: How a processed version was made (null on originals).
+        processedImageId:
+          type: [integer, "null"]
+          format: int64
+          description: Set on an original that has a processed version; generation uses that version instead.
+    ProcessingStep:
+      type: string
+      enum: [remove_background, trim, resize]
+    Processing:
+      type: object
+      required: [steps, costMicros, durationMs]
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessingStep"
+        provider:
+          type: string
+          description: Provider that removed the background.
+        providerModel:
+          type: string
+        providerJobId:
+          type: string
+        trimMarginPct:
+          type: number
+        maxEdge:
+          type: integer
+        costMicros:
+          type: integer
+          format: int64
+        durationMs:
+          type: integer
+          format: int64
+    ProcessOptions:
+      type: object
+      additionalProperties: false
+      description: At least one step is required.
+      properties:
+        removeBackground:
+          type: boolean
+        trim:
+          type: boolean
+          description: Crop to the garment plus a small margin; needs a transparent background.
+        maxEdge:
+          type: integer
+          minimum: 256
+          maximum: 8192
+          description: Scale down so the long edge is at most this many pixels (0 or absent = no resize).
+        provider:
+          type: string
+          description: Background-removal provider; defaults to the first configured one.
     ModelImageRole:
       type: string
       enum: [identity, full_body]
@@ -1393,6 +1509,9 @@ components:
           description: Product view or model image role.
         hash:
           type: string
+        processed:
+          type: boolean
+          description: The garment photograph is a processed version (background removed, trimmed or resized).
     Snapshot:
       type: object
       description: The complete, immutable record of what produced a generation's images.
@@ -1748,6 +1867,7 @@ components:
                 description: What is missing when unavailable.
               capabilities:
                 type: array
+                description: What the provider offers (or would offer once configured).
                 items:
                   type: string
               models:
@@ -1787,7 +1907,7 @@ components:
                       type: string
     MetricsGrouping:
       type: string
-      enum: [pipeline, recipe, provider, product, printComplexity, garmentRefs, preset]
+      enum: [pipeline, recipe, provider, product, printComplexity, garmentRefs, garmentProcessing, preset]
       default: pipeline
       description: "`pipeline` is the recipe with the provider of each step."
     Metrics:

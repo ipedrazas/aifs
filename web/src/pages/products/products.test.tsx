@@ -18,6 +18,9 @@ const image = {
   width: 800,
   height: 1200,
   createdAt: '2026-01-01T00:00:00Z',
+  sourceImageId: null,
+  processing: null,
+  processedImageId: null,
 }
 
 const product = {
@@ -145,6 +148,136 @@ describe('products', () => {
     // The successful one leaves the queue; the failed one stays with its reason.
     expect(await screen.findByText('the image is damaged or incomplete')).toBeInTheDocument()
     expect(screen.queryByText('jeans-back.jpg')).not.toBeInTheDocument()
+  })
+})
+
+const replicate = {
+  name: 'replicate',
+  label: 'Replicate background removal',
+  available: true,
+  reason: '',
+  capabilities: ['remove_background'],
+  models: {},
+  unitPriceMicros: 500,
+  recipes: [],
+}
+
+function providersReply(...providers: object[]) {
+  return { status: 200, body: { providers, recipes: [], maxVariations: 4 } }
+}
+
+const processed = {
+  ...image,
+  id: 9,
+  hash: 'b'.repeat(64),
+  filename: 'front-processed.png',
+  contentType: 'image/png',
+  width: 700,
+  height: 1100,
+  sourceImageId: 7,
+  processing: { steps: ['remove_background', 'trim', 'resize'], provider: 'replicate', maxEdge: 3072, costMicros: 500, durationMs: 2100 },
+}
+
+describe('photograph processing', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('processes a photograph and uses the processed version', async () => {
+    let images: object[] = [image]
+    let sent: unknown
+    mockApi({
+      'GET /api/v1/session': loggedIn,
+      'GET /api/v1/version': version,
+      'GET /api/v1/products/1': () => ({ status: 200, body: { ...product, images } }),
+      'GET /api/v1/products': { status: 200, body: { items: [product] } },
+      'GET /api/v1/providers': providersReply(replicate),
+      'POST /api/v1/products/1/images/7/process': async (req) => {
+        sent = await req.json()
+        images = [{ ...image, processedImageId: 9 }, processed]
+        return { status: 201, body: processed }
+      },
+    })
+    const user = userEvent.setup()
+    visit('/products/1')
+
+    await user.click(await screen.findByRole('button', { name: 'Process…' }))
+    expect(await screen.findByText(/Replicate background removal · about \$0\.0005 per photograph/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Process' }))
+    await waitFor(() => expect(sent).toEqual({ removeBackground: true, trim: true, maxEdge: 3072 }))
+
+    expect(await screen.findByText('Processed · used for generation')).toBeInTheDocument()
+    expect(screen.getByText('Background removed, trimmed, resized to 3072 px · $0.0005')).toBeInTheDocument()
+    expect(screen.getAllByTestId('product-image')).toHaveLength(1)
+    expect(screen.getByRole('img')).toHaveAttribute('src', `/api/v1/blobs/${processed.hash}?w=512`)
+
+    await user.click(screen.getByRole('button', { name: 'Show original' }))
+    expect(screen.getByRole('img')).toHaveAttribute('src', `/api/v1/blobs/${image.hash}?w=512`)
+    expect(screen.getByText('Original (not used)')).toBeInTheDocument()
+  })
+
+  it('explains when background removal is unavailable and shows field errors', async () => {
+    let sent: unknown
+    mockApi({
+      'GET /api/v1/session': loggedIn,
+      'GET /api/v1/version': version,
+      'GET /api/v1/products/1': { status: 200, body: { ...product, images: [image] } },
+      'GET /api/v1/products': { status: 200, body: { items: [product] } },
+      'GET /api/v1/providers': providersReply({
+        ...replicate,
+        available: false,
+        reason: 'set AIFS_REPLICATE_API_TOKEN to enable it',
+      }),
+      'POST /api/v1/products/1/images/7/process': async (req) => {
+        sent = await req.json()
+        return {
+          status: 422,
+          body: {
+            error: {
+              code: 'invalid',
+              message: 'some fields are invalid',
+              fields: { trim: 'trimming needs a transparent background: remove the background as well' },
+            },
+          },
+        }
+      },
+    })
+    const user = userEvent.setup()
+    visit('/products/1')
+
+    await user.click(await screen.findByRole('button', { name: 'Process…' }))
+    expect(await screen.findByText('Unavailable: set AIFS_REPLICATE_API_TOKEN to enable it')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Remove the background/ })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Process' }))
+    await waitFor(() => expect(sent).toEqual({ removeBackground: false, trim: true, maxEdge: 3072 }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('trimming needs a transparent background')
+  })
+
+  it('processes every unprocessed photograph', async () => {
+    const back = { ...image, id: 8, hash: 'c'.repeat(64), view: 'back', filename: 'back.jpg' }
+    const calls: string[] = []
+    mockApi({
+      'GET /api/v1/session': loggedIn,
+      'GET /api/v1/version': version,
+      'GET /api/v1/products/1': { status: 200, body: { ...product, images: [image, back] } },
+      'GET /api/v1/products': { status: 200, body: { items: [product] } },
+      'GET /api/v1/providers': providersReply(replicate),
+      'POST /api/v1/products/1/images/7/process': () => {
+        calls.push('front')
+        return { status: 201, body: processed }
+      },
+      'POST /api/v1/products/1/images/8/process': () => {
+        calls.push('back')
+        return { status: 502, body: { error: { code: 'provider_failed', message: 'rate limit reached on Replicate' } } }
+      },
+    })
+    const user = userEvent.setup()
+    visit('/products/1')
+
+    expect(await screen.findByText('2 photographs not processed yet.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Process all…' }))
+    await user.click(await screen.findByRole('button', { name: 'Process 2' }))
+    expect(await screen.findByText('Processed 1 of 2.')).toBeInTheDocument()
+    expect(calls).toEqual(['front', 'back'])
+    expect(screen.getByRole('alert')).toHaveTextContent('Back back.jpg: rate limit reached on Replicate')
   })
 })
 
