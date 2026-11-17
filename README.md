@@ -105,7 +105,7 @@ Every generated image starts as pending and only a human decision in the Review 
 
 The Metrics page reports the PRD §10 success metrics, in total and grouped by recipe and providers, recipe, providers, product, print complexity, number of garment photographs sent, or preset. It can be filtered by provider, recipe, product, date range and test set. Rates are over reviewed images (pending images are counted, not rated). The fidelity pass rate is the share of reviewed images not rejected for fidelity. Cost per approved image includes failed and rejected work.
 
-Products can be marked as part of the fidelity test set and rated by print complexity. The evaluation procedure, review rubric and decision record are in [`plans/fidelity-gate.md`](plans/fidelity-gate.md).
+Products can be marked as part of the fidelity test set and rated by print complexity.
 
 ## Security
 
