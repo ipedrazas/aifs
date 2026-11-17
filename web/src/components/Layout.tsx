@@ -16,6 +16,7 @@ export function Layout() {
                 ['/products', 'Products'],
                 ['/models', 'Models'],
                 ['/photoshoots', 'Photoshoots'],
+                ['/presets', 'Presets'],
                 ['/review', 'Review'],
               ].map(([to, label]) => (
                 <NavLink

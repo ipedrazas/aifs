@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { blobUrl, type AspectRatio, type Generation, type Photoshoot } from '../../api/client'
+import { blobUrl, type AspectRatio, type Generation, type Photoshoot, type Providers } from '../../api/client'
 import {
   isActive,
   useCancelGeneration,
   useDeletePhotoshoot,
   usePhotoshoot,
+  usePresets,
   useProviders,
   useStartGeneration,
   useUpdatePhotoshoot,
@@ -82,30 +83,69 @@ function Subjects({ ps }: { ps: Photoshoot }) {
   )
 }
 
+type ProviderInfo = Providers['providers'][number]
+
+/** One provider choice per distinct capability of the recipe, in step order. */
+function recipeSlots(recipe: Providers['recipes'][number] | undefined) {
+  const seen = new Set<string>()
+  const out: { capability: string; purpose: string }[] = []
+  for (const st of recipe?.steps ?? []) {
+    if (seen.has(st.capability)) continue
+    seen.add(st.capability)
+    out.push(st)
+  }
+  return out
+}
+
+function capitalise(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 function GeneratePanel({ ps }: { ps: Photoshoot }) {
   const providers = useProviders()
+  const presets = usePresets()
   const product = useProduct(ps.productId)
   const start = useStartGeneration(ps.id)
   const [recipe, setRecipe] = useState('reference')
-  const [provider, setProvider] = useState('')
+  // Chosen provider per capability; falls back to the first eligible one.
+  const [picked, setPicked] = useState<Record<string, string>>({})
+  const [presetId, setPresetId] = useState(0)
   const [variations, setVariations] = useState(2)
   const [garment, setGarment] = useState('')
 
   const info = providers.data
   const available = info?.providers.filter((p) => p.available) ?? []
   const unavailable = info?.providers.filter((p) => !p.available) ?? []
-  const eligible = available.filter((p) => p.recipes.includes(recipe))
-  const chosen = eligible.find((p) => p.name === provider) ?? eligible[0]
   const max = info?.maxVariations ?? 4
   const recipeInfo = info?.recipes.find((r) => r.name === recipe)
-  const steps = recipeInfo?.steps.length ?? 1
-  const usesTryOn = recipeInfo?.steps.some((s) => s.capability === 'try_on') ?? false
+  const slots = recipeSlots(recipeInfo)
+  const chosen: Record<string, ProviderInfo | undefined> = {}
+  for (const slot of slots) {
+    const eligible = available.filter((p) => p.capabilities.includes(slot.capability))
+    chosen[slot.capability] = eligible.find((p) => p.name === picked[slot.capability]) ?? eligible[0]
+  }
+  const ready = slots.length > 0 && slots.every((s) => chosen[s.capability])
+  const perVariation = (recipeInfo?.steps ?? []).reduce((sum, st) => sum + (chosen[st.capability]?.unitPriceMicros ?? 0), 0)
+  const calls = recipeInfo?.steps.length ?? 1
+  const usesTryOn = slots.some((s) => s.capability === 'try_on')
   const images = product.data?.images ?? []
+  const preset = presetId || ps.presetId
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    if (!chosen) return
-    start.mutate({ recipe, provider: chosen.name, variations, ...(garment ? { garmentImageId: Number(garment) } : {}) })
+    if (!ready) return
+    const names = slots.map((s) => chosen[s.capability]!.name)
+    const assignment =
+      new Set(names).size === 1
+        ? { provider: names[0] }
+        : { providers: Object.fromEntries(slots.map((s) => [s.capability, chosen[s.capability]!.name])) }
+    start.mutate({
+      recipe,
+      ...assignment,
+      variations,
+      ...(preset ? { presetId: preset } : {}),
+      ...(garment ? { garmentImageId: Number(garment) } : {}),
+    })
   }
 
   if (info && available.length === 0) {
@@ -135,25 +175,54 @@ function GeneratePanel({ ps }: { ps: Photoshoot }) {
             </option>
           ))}
         </select>
-        <p className="text-xs text-stone-500">{info?.recipes.find((r) => r.name === recipe)?.description}</p>
+        <p className="text-xs text-stone-500">{recipeInfo?.description}</p>
       </div>
+      {slots.map((slot) => {
+        const id = `gen-provider-${slot.capability}`
+        const eligible = available.filter((p) => p.capabilities.includes(slot.capability))
+        return (
+          <div key={slot.capability} className="space-y-1">
+            <label htmlFor={id} className="block text-sm text-stone-700">
+              {slots.length === 1 ? 'Provider' : `${capitalise(slot.purpose)} provider`}
+            </label>
+            <select
+              id={id}
+              value={chosen[slot.capability]?.name ?? ''}
+              onChange={(e) => setPicked({ ...picked, [slot.capability]: e.target.value })}
+              className={fieldClass}
+            >
+              {eligible.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.label}
+                </option>
+              ))}
+              {unavailable.map((p) => (
+                <option key={p.name} value={p.name} disabled>
+                  {p.label} — {p.reason}
+                </option>
+              ))}
+            </select>
+            {!chosen[slot.capability] && (
+              <p className="text-xs text-amber-800">No configured provider can run the {slot.purpose} step.</p>
+            )}
+          </div>
+        )
+      })}
       <div className="space-y-1">
-        <label htmlFor="gen-provider" className="block text-sm text-stone-700">
-          Provider
+        <label htmlFor="gen-preset" className="block text-sm text-stone-700">
+          Preset
         </label>
-        <select id="gen-provider" value={chosen?.name ?? ''} onChange={(e) => setProvider(e.target.value)} className={fieldClass}>
-          {eligible.map((p) => (
-            <option key={p.name} value={p.name}>
-              {p.label}
-            </option>
-          ))}
-          {unavailable.map((p) => (
-            <option key={p.name} value={p.name} disabled>
-              {p.label} — {p.reason}
+        <select id="gen-preset" value={preset} onChange={(e) => setPresetId(Number(e.target.value))} className={fieldClass}>
+          {(presets.data ?? []).map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+              {p.id === ps.presetId ? ' (photoshoot default)' : ''}
             </option>
           ))}
         </select>
-        {!chosen && <p className="text-xs text-amber-800">No configured provider can run this recipe.</p>}
+        {recipe === 'tryon-photo' && (
+          <p className="text-xs text-stone-500">This recipe keeps the scene of the model&apos;s photograph; the preset is recorded but not applied.</p>
+        )}
       </div>
       {usesTryOn && images.length > 0 && (
         <div className="space-y-1">
@@ -186,14 +255,14 @@ function GeneratePanel({ ps }: { ps: Photoshoot }) {
           className={fieldClass}
         />
         <p className="text-xs text-stone-500">
-          {`Up to ${max}. Estimated cost: ${chosen ? formatCost(chosen.unitPriceMicros * steps * variations) : '–'} ` +
-            `(price per call × ${steps} call${steps === 1 ? '' : 's'} × ${variations}).`}
+          {`Up to ${max}. Estimated cost: ${ready ? formatCost(perVariation * variations) : '–'} ` +
+            `(${calls} call${calls === 1 ? '' : 's'} per variation × ${variations}).`}
         </p>
       </div>
       <ErrorMessage error={start.error} />
       <button
         type="submit"
-        disabled={start.isPending || !chosen || ps.model.archived}
+        disabled={start.isPending || !ready || ps.model.archived}
         className="w-full rounded bg-stone-900 px-4 py-2 font-medium text-white disabled:opacity-50"
       >
         {start.isPending ? 'Queueing…' : 'Generate'}
@@ -208,6 +277,8 @@ function Settings({ ps }: { ps: Photoshoot }) {
   const navigate = useNavigate()
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(ps.aspectRatio)
   const [instructions, setInstructions] = useState(ps.customInstructions)
+  const [presetId, setPresetId] = useState(ps.presetId)
+  const presets = usePresets()
 
   return (
     <div className="space-y-3 rounded border border-stone-200 bg-white p-4">
@@ -216,7 +287,7 @@ function Settings({ ps }: { ps: Photoshoot }) {
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault()
-          update.mutate({ aspectRatio, customInstructions: instructions })
+          update.mutate({ aspectRatio, customInstructions: instructions, ...(presetId ? { presetId } : {}) })
         }}
       >
         <div className="space-y-1">
@@ -227,6 +298,18 @@ function Settings({ ps }: { ps: Photoshoot }) {
             {ASPECT_RATIOS.map((r) => (
               <option key={r.value} value={r.value}>
                 {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="set-preset" className="block text-sm text-stone-700">
+            Default preset
+          </label>
+          <select id="set-preset" value={presetId} onChange={(e) => setPresetId(Number(e.target.value))} className={fieldClass}>
+            {(presets.data ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
               </option>
             ))}
           </select>
@@ -271,7 +354,8 @@ function GenerationCard({ g, photoshootId }: { g: Generation; photoshootId: numb
         <div className="flex items-center gap-2">
           <StatusBadge status={g.status} />
           <span className="text-sm text-stone-700">
-            {g.recipe} · {g.provider} · {g.variations} variation{g.variations === 1 ? '' : 's'}
+            {g.recipe} · {stepProviders(g)}
+            {g.settings.preset?.name ? ` · ${g.settings.preset.name}` : ''} · {g.variations} variation{g.variations === 1 ? '' : 's'}
           </span>
         </div>
         <div className="flex items-center gap-3 text-xs text-stone-500">
@@ -325,4 +409,13 @@ function GenerationCard({ g, photoshootId }: { g: Generation; photoshootId: numb
       </ul>
     </article>
   )
+}
+
+/** The providers of a generation's steps, in order, e.g. "gemini → fashn". */
+function stepProviders(g: Generation): string {
+  const names: string[] = []
+  for (const st of g.settings.steps) {
+    if (names[names.length - 1] !== st.provider) names.push(st.provider)
+  }
+  return names.length > 0 ? names.join(' → ') : g.provider
 }

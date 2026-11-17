@@ -127,6 +127,7 @@ func (r Recipe) SupportedBy(p provider.Provider) bool {
 type PromptInput struct {
 	Product            catalog.Product
 	Model              catalog.Model
+	Preset             Preset
 	AspectRatio        string
 	CustomInstructions string
 }
@@ -144,7 +145,18 @@ const fidelityRule = "Reproduce the garment exactly as it appears in its referen
 
 const identityRule = "Keep the person's face, skin tone, hair and build consistent with the model reference images."
 
-const defaultScene = "Clean studio catalogue shot: plain light-grey seamless background, soft even lighting, full-body framing, natural standing pose."
+// sceneLines describes the scene from the preset. The model's preferred
+// poses, when given, refine the preset's pose.
+func sceneLines(b *strings.Builder, in PromptInput) {
+	p := in.Preset
+	b.WriteString(line("Environment", p.Environment))
+	b.WriteString(line("Pose", p.Pose))
+	b.WriteString(line("Preferred poses for this model", in.Model.PreferredPoses))
+	b.WriteString(line("Framing", p.Framing))
+	b.WriteString(line("Lighting", p.Lighting))
+	b.WriteString(line("Photographic style", p.Style))
+	b.WriteString(line("Scene notes", p.PromptFragment))
+}
 
 func referencePrompt(in PromptInput) string {
 	var b strings.Builder
@@ -157,8 +169,7 @@ func referencePrompt(in PromptInput) string {
 	b.WriteString(line("Print details", in.Product.PrintDetails))
 	b.WriteString(line("Model", in.Model.Appearance))
 	b.WriteString(line("Styling", in.Model.Styling))
-	b.WriteString(line("Pose", in.Model.PreferredPoses))
-	b.WriteString(line("Scene", defaultScene))
+	sceneLines(&b, in)
 	b.WriteString(line("Aspect ratio", in.AspectRatio))
 	b.WriteString(line("Additional instructions", in.CustomInstructions))
 	return strings.TrimSpace(b.String())
@@ -174,8 +185,7 @@ func scenePrompt(in PromptInput) string {
 		"wearing simple, close-fitting plain clothing so a garment can be fitted onto them afterwards.\n")
 	b.WriteString(identityRule + "\n\n")
 	b.WriteString(line("Model", in.Model.Appearance))
-	b.WriteString(line("Pose", in.Model.PreferredPoses))
-	b.WriteString(line("Scene", defaultScene))
+	sceneLines(&b, in)
 	b.WriteString(line("Aspect ratio", in.AspectRatio))
 	b.WriteString(line("Additional instructions", in.CustomInstructions))
 	return strings.TrimSpace(b.String())

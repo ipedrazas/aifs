@@ -122,6 +122,12 @@ tasks:
     cmds:
       - go test -tags live -run TestLive -count=1 -v ./internal/provider/fashn/
 
+  test:live:gemini:
+    desc: Run one real Gemini image generation via OpenRouter (spends money; needs AIFS_OPENROUTER_API_KEY)
+    dir: api
+    cmds:
+      - go test -tags live -run TestLive -count=1 -v ./internal/provider/gemini/
+
   vulncheck:
     desc: Check Go dependencies for known vulnerabilities
     dir: api

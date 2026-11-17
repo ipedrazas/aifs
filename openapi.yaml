@@ -762,6 +762,43 @@ paths:
                 $ref: "#/components/schemas/Providers"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+  /api/v1/presets:
+    get:
+      operationId: listPresets
+      summary: Photoshoot presets, built-in first
+      tags: [presets]
+      responses:
+        "200":
+          description: Presets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresetList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /api/v1/presets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      operationId: getPreset
+      summary: One preset
+      tags: [presets]
+      responses:
+        "200":
+          description: The preset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preset"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/blobs/{hash}:
     get:
       operationId: getBlob
@@ -1095,6 +1132,65 @@ components:
         customInstructions:
           type: string
           maxLength: 2000
+        presetId:
+          type: integer
+          format: int64
+          description: The preset generations use by default; 0 or absent on create means the built-in studio preset.
+    Preset:
+      type: object
+      description: The scene of a photograph. Presets never describe the garment.
+      required: [id, slug, name, description, environment, pose, framing, lighting, style, promptFragment, builtIn, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        slug:
+          type: string
+          description: Stable identifier of a built-in preset; empty for custom presets.
+        name:
+          type: string
+        description:
+          type: string
+        environment:
+          type: string
+        pose:
+          type: string
+        framing:
+          type: string
+        lighting:
+          type: string
+        style:
+          type: string
+        promptFragment:
+          type: string
+        builtIn:
+          type: boolean
+          description: Built-in presets are read-only.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PresetList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Preset"
+    PresetSummary:
+      type: object
+      required: [id, name, builtIn]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        builtIn:
+          type: boolean
     ProductSummary:
       type: object
       required: [id, name, sku, coverHash]
@@ -1123,7 +1219,7 @@ components:
           type: string
     Photoshoot:
       type: object
-      required: [id, name, productId, modelId, aspectRatio, customInstructions, createdAt, updatedAt, product, model, generationCount, latestImageHash]
+      required: [id, name, productId, modelId, aspectRatio, customInstructions, createdAt, updatedAt, product, model, presetId, preset, generationCount, latestImageHash]
       properties:
         id:
           type: integer
@@ -1150,6 +1246,11 @@ components:
           $ref: "#/components/schemas/ProductSummary"
         model:
           $ref: "#/components/schemas/ModelSummary"
+        presetId:
+          type: integer
+          format: int64
+        preset:
+          $ref: "#/components/schemas/PresetSummary"
         generationCount:
           type: integer
         latestImageHash:
@@ -1171,13 +1272,25 @@ components:
     GenerationRequest:
       type: object
       additionalProperties: false
-      required: [recipe, provider, variations]
+      required: [recipe, variations]
       properties:
         recipe:
           type: string
           description: A recipe name from `GET /api/v1/providers`.
         provider:
           type: string
+          description: Runs every step that `providers` does not assign.
+        providers:
+          type: object
+          description: |
+            Optional provider per capability (e.g. `{"reference_generate": "gemini",
+            "try_on": "fashn"}`), so one recipe can combine services.
+          additionalProperties:
+            type: string
+        presetId:
+          type: integer
+          format: int64
+          description: The scene preset; defaults to the photoshoot's preset.
         variations:
           type: integer
           minimum: 1
@@ -1214,12 +1327,13 @@ components:
     Snapshot:
       type: object
       description: The complete, immutable record of what produced a generation's images.
-      required: [recipe, provider, variations, aspectRatio, customInstructions, photoshoot, product, model, steps, inputs]
+      required: [recipe, provider, variations, aspectRatio, customInstructions, photoshoot, product, model, preset, steps, inputs]
       properties:
         recipe:
           type: string
         provider:
           type: string
+          description: The provider that made the final image; each step records its own.
         variations:
           type: integer
         aspectRatio:
@@ -1266,6 +1380,32 @@ components:
             preferredPoses:
               type: string
             styling:
+              type: string
+        preset:
+          type: object
+          description: The preset as it was when generating (id 0 for generations made before presets existed).
+          required: [id, slug, name, builtIn, environment, pose, framing, lighting, style, promptFragment]
+          properties:
+            id:
+              type: integer
+              format: int64
+            slug:
+              type: string
+            name:
+              type: string
+            builtIn:
+              type: boolean
+            environment:
+              type: string
+            pose:
+              type: string
+            framing:
+              type: string
+            lighting:
+              type: string
+            style:
+              type: string
+            promptFragment:
               type: string
         steps:
           type: array

@@ -22,6 +22,16 @@ const providers = {
         recipes: ['reference', 'tryon-photo', 'tryon'],
       },
       {
+        name: 'gemini',
+        label: 'Gemini image (OpenRouter)',
+        available: true,
+        reason: '',
+        capabilities: ['reference_generate', 'edit'],
+        models: {},
+        unitPriceMicros: 140_000,
+        recipes: ['reference'],
+      },
+      {
         name: 'fashn',
         label: 'FASHN virtual try-on',
         available: false,
@@ -40,6 +50,29 @@ const providers = {
   },
 }
 
+function preset(id: number, slug: string, name: string) {
+  return {
+    id,
+    slug,
+    name,
+    description: '',
+    environment: `${name} environment`,
+    pose: 'standing',
+    framing: 'full body',
+    lighting: 'soft',
+    style: 'catalogue',
+    promptFragment: '',
+    builtIn: true,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  }
+}
+
+const presetsMock = {
+  status: 200,
+  body: { items: [preset(1, 'studio', 'Clean studio catalogue'), preset(2, 'urban', 'Urban lifestyle'), preset(3, 'coffee-shop', 'Coffee shop'), preset(4, 'outdoor', 'Outdoor')] },
+}
+
 const snapshot = {
   recipe: 'reference',
   provider: 'fake',
@@ -49,6 +82,7 @@ const snapshot = {
   photoshoot: { id: 5, name: 'Jeans on Ava' },
   product: { id: 1, name: 'Jeans', sku: 'J-1', category: 'jeans', colour: '', printDetails: '' },
   model: { id: 2, name: 'Ava', appearance: '', preferredPoses: '', styling: '' },
+  preset: { id: 1, slug: 'studio', name: 'Clean studio catalogue', builtIn: true, environment: '', pose: '', framing: '', lighting: '', style: '', promptFragment: '' },
   steps: [{ position: 1, capability: 'reference_generate', purpose: 'photograph', provider: 'fake', providerModel: 'fake-v1', prompt: 'p', inputs: [1, 2], usesPrevious: false, source: 0 }],
   inputs: [
     { position: 1, role: 'garment', label: 'front', hash: 'a'.repeat(64) },
@@ -106,6 +140,8 @@ function photoshoot(generations: unknown[]) {
     updatedAt: '2026-01-01T00:00:00Z',
     product: { id: 1, name: 'Jeans', sku: 'J-1', coverHash: 'a'.repeat(64) },
     model: { id: 2, name: 'Ava', archived: false, coverHash: 'b'.repeat(64) },
+    presetId: 1,
+    preset: { id: 1, name: 'Clean studio catalogue', builtIn: true },
     generationCount: generations.length,
     latestImageHash: '',
     generations,
@@ -148,6 +184,7 @@ describe('photoshoot generation', () => {
       'GET /api/v1/session': loggedIn,
       'GET /api/v1/version': version,
       'GET /api/v1/providers': providers,
+      'GET /api/v1/presets': presetsMock,
       'GET /api/v1/products/1': productMock,
       'GET /api/v1/photoshoots/5': () => ({ status: 200, body: states[Math.min(calls++, states.length - 1)] }),
       'GET /api/v1/photoshoots': { status: 200, body: { items: [] } },
@@ -163,7 +200,7 @@ describe('photoshoot generation', () => {
     expect(await screen.findByText('Nothing generated yet.')).toBeInTheDocument()
     expect(await screen.findByText(/Estimated cost: \$0\.02/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Generate' }))
-    await waitFor(() => expect(sent).toEqual({ recipe: 'reference', provider: 'fake', variations: 2 }))
+    await waitFor(() => expect(sent).toEqual({ recipe: 'reference', provider: 'fake', variations: 2, presetId: 1 }))
 
     // Running: one image and one placeholder.
     const card = await screen.findByTestId('generation')
@@ -182,6 +219,7 @@ describe('photoshoot generation', () => {
       'GET /api/v1/session': loggedIn,
       'GET /api/v1/version': version,
       'GET /api/v1/providers': providers,
+      'GET /api/v1/presets': presetsMock,
       'GET /api/v1/products/1': productMock,
       'GET /api/v1/photoshoots/5': () => ({
         status: 200,
@@ -209,6 +247,7 @@ describe('try-on options', () => {
       'GET /api/v1/session': loggedIn,
       'GET /api/v1/version': version,
       'GET /api/v1/providers': providers,
+      'GET /api/v1/presets': presetsMock,
       'GET /api/v1/products/1': productMock,
       'GET /api/v1/photoshoots/5': { status: 200, body: photoshoot([]) },
       'GET /api/v1/photoshoots': { status: 200, body: { items: [] } },
@@ -228,7 +267,83 @@ describe('try-on options', () => {
     await user.selectOptions(screen.getByLabelText('Recipe'), 'tryon-photo')
     await user.selectOptions(await screen.findByLabelText('Garment photograph'), '12')
     await user.click(screen.getByRole('button', { name: 'Generate' }))
-    await waitFor(() => expect(sent).toEqual({ recipe: 'tryon-photo', provider: 'fake', variations: 2, garmentImageId: 12 }))
+    await waitFor(() => expect(sent).toEqual({ recipe: 'tryon-photo', provider: 'fake', variations: 2, presetId: 1, garmentImageId: 12 }))
+  })
+})
+
+describe('recipes, providers and presets', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('combines providers per step and chooses a preset', async () => {
+    let sent: unknown
+    mockApi({
+      'GET /api/v1/session': loggedIn,
+      'GET /api/v1/version': version,
+      'GET /api/v1/providers': providers,
+      'GET /api/v1/presets': presetsMock,
+      'GET /api/v1/products/1': productMock,
+      'GET /api/v1/photoshoots/5': { status: 200, body: photoshoot([]) },
+      'GET /api/v1/photoshoots': { status: 200, body: { items: [] } },
+      'GET /api/v1/images': { status: 200, body: { items: [] } },
+      'POST /api/v1/photoshoots/5/generations': async (req) => {
+        sent = await req.json()
+        return { status: 202, body: generation('queued', 0) }
+      },
+    })
+    const user = userEvent.setup()
+    visit('/photoshoots/5')
+
+    expect(await screen.findByRole('option', { name: 'Clean studio catalogue (photoshoot default)' })).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Recipe'), 'tryon')
+    // One choice per step; only providers that can run the step are offered.
+    const scene = screen.getByLabelText('Scene provider')
+    const tryOn = screen.getByLabelText('Try-on provider')
+    expect(within(tryOn).queryByRole('option', { name: 'Gemini image (OpenRouter)' })).not.toBeInTheDocument()
+    await user.selectOptions(scene, 'gemini')
+    await user.selectOptions(screen.getByLabelText('Preset'), '4')
+    // ($0.14 + $0.01) × 2 variations.
+    expect(screen.getByText(/Estimated cost: \$0\.30/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await waitFor(() =>
+      expect(sent).toEqual({ recipe: 'tryon', providers: { reference_generate: 'gemini', try_on: 'fake' }, variations: 2, presetId: 4 }),
+    )
+  })
+
+  it('labels each generation with its providers and preset', async () => {
+    const g = generation('succeeded', 1)
+    g.settings = {
+      ...snapshot,
+      recipe: 'tryon',
+      preset: { ...snapshot.preset, name: 'Outdoor' },
+      steps: [
+        { ...snapshot.steps[0], provider: 'gemini' },
+        { ...snapshot.steps[0], position: 2, capability: 'try_on', purpose: 'try-on', provider: 'fashn' },
+      ],
+    }
+    g.recipe = 'tryon'
+    mockApi({
+      'GET /api/v1/session': loggedIn,
+      'GET /api/v1/version': version,
+      'GET /api/v1/providers': providers,
+      'GET /api/v1/presets': presetsMock,
+      'GET /api/v1/products/1': productMock,
+      'GET /api/v1/photoshoots/5': { status: 200, body: photoshoot([g]) },
+    })
+    visit('/photoshoots/5')
+    expect(await screen.findByText(/tryon · gemini → fashn · Outdoor · 2 variations/)).toBeInTheDocument()
+  })
+
+  it('lists the built-in presets', async () => {
+    mockApi({
+      'GET /api/v1/session': loggedIn,
+      'GET /api/v1/version': version,
+      'GET /api/v1/presets': presetsMock,
+    })
+    visit('/presets')
+    expect(await screen.findAllByTestId('preset')).toHaveLength(4)
+    expect(screen.getByText('Outdoor environment')).toBeInTheDocument()
+    expect(screen.getAllByText('Built-in')).toHaveLength(4)
   })
 })
 

@@ -35,7 +35,8 @@ const (
 // Snapshot is the complete, immutable record of what a generation was asked
 // to do. It is stored as JSON with the generation.
 type Snapshot struct {
-	Recipe             string            `json:"recipe"`
+	Recipe string `json:"recipe"`
+	// Provider made the final image; Steps record the provider of each call.
 	Provider           string            `json:"provider"`
 	Variations         int               `json:"variations"`
 	AspectRatio        string            `json:"aspectRatio"`
@@ -43,6 +44,7 @@ type Snapshot struct {
 	Photoshoot         SnapshotRef       `json:"photoshoot"`
 	Product            SnapshotProduct   `json:"product"`
 	Model              SnapshotModel     `json:"model"`
+	Preset             SnapshotPreset    `json:"preset"`
 	Steps              []SnapshotStep    `json:"steps"`
 	Inputs             []GenerationInput `json:"inputs"`
 }
@@ -70,6 +72,20 @@ type SnapshotModel struct {
 	Appearance     string `json:"appearance"`
 	PreferredPoses string `json:"preferredPoses"`
 	Styling        string `json:"styling"`
+}
+
+// SnapshotPreset is the preset as it was when generating.
+type SnapshotPreset struct {
+	ID             int64  `json:"id"`
+	Slug           string `json:"slug"`
+	Name           string `json:"name"`
+	BuiltIn        bool   `json:"builtIn"`
+	Environment    string `json:"environment"`
+	Pose           string `json:"pose"`
+	Framing        string `json:"framing"`
+	Lighting       string `json:"lighting"`
+	Style          string `json:"style"`
+	PromptFragment string `json:"promptFragment"`
 }
 
 // SnapshotStep is one planned provider call (the same for every variation).
@@ -163,9 +179,15 @@ type GeneratedImage struct {
 
 // GenerationRequest starts a generation.
 type GenerationRequest struct {
-	Recipe     string `json:"recipe"`
-	Provider   string `json:"provider"`
-	Variations int    `json:"variations"`
+	Recipe string `json:"recipe"`
+	// Provider runs every step that Providers does not assign.
+	Provider string `json:"provider"`
+	// Providers optionally assigns a provider per capability, so a recipe
+	// can combine services (e.g. a Gemini scene, then a FASHN try-on).
+	Providers  map[string]string `json:"providers"`
+	Variations int               `json:"variations"`
+	// PresetID chooses the scene; 0 uses the photoshoot's preset.
+	PresetID int64 `json:"presetId"`
 	// GarmentImageID optionally chooses the product photograph sent first
 	// (and alone, for try-on). Defaults to the front view.
 	GarmentImageID int64 `json:"garmentImageId"`
@@ -181,12 +203,9 @@ func (s *Service) StartGeneration(ctx context.Context, photoshootID int64, req G
 	if !ok {
 		return Generation{}, invalid("recipe", "unknown recipe")
 	}
-	prov, err := s.providers.Get(req.Provider)
+	provs, err := s.stepProviders(recipe, req)
 	if err != nil {
-		return Generation{}, invalid("provider", "this provider is not configured")
-	}
-	if !recipe.SupportedBy(prov) {
-		return Generation{}, invalid("provider", fmt.Sprintf("%s cannot run the %s recipe", prov.Label(), recipe.Label))
+		return Generation{}, err
 	}
 
 	ps, err := s.GetPhotoshoot(ctx, photoshootID)
@@ -203,6 +222,14 @@ func (s *Service) StartGeneration(ctx context.Context, photoshootID int64, req G
 	if len(model.Images) == 0 {
 		return Generation{}, invalid("modelId", "the model has no reference images yet")
 	}
+	presetID := req.PresetID
+	if presetID == 0 {
+		presetID = ps.PresetID
+	}
+	preset, err := s.resolvePreset(ctx, presetID, "presetId")
+	if err != nil {
+		return Generation{}, err
+	}
 	if req.GarmentImageID != 0 {
 		idx := -1
 		for i, im := range prod.Images {
@@ -218,7 +245,7 @@ func (s *Service) StartGeneration(ctx context.Context, photoshootID int64, req G
 		prod.Images = append([]catalog.ProductImage{chosen}, append(prod.Images[:idx:idx], prod.Images[idx+1:]...)...)
 	}
 
-	snap := s.plan(recipe, prov, ps, prod, model, req.Variations)
+	snap := s.plan(recipe, provs, ps, preset, prod, model, req.Variations)
 	settings, err := json.Marshal(snap)
 	if err != nil {
 		return Generation{}, err
@@ -241,7 +268,7 @@ func (s *Service) StartGeneration(ctx context.Context, photoshootID int64, req G
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO generation (photoshoot_id, product_id, model_id, recipe, provider, variations, settings, prompt, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ps.ID, prod.ID, model.ID, recipe.Name, prov.Name(), req.Variations, string(settings), prompt, now)
+		ps.ID, prod.ID, model.ID, recipe.Name, snap.Provider, req.Variations, string(settings), prompt, now)
 	if err != nil {
 		return Generation{}, err
 	}
@@ -271,18 +298,52 @@ func (s *Service) StartGeneration(ctx context.Context, photoshootID int64, req G
 		return Generation{}, err
 	}
 
-	s.log.InfoContext(ctx, "generation queued", "generation", id, "recipe", recipe.Name, "provider", prov.Name(), "variations", req.Variations)
+	s.log.InfoContext(ctx, "generation queued", "generation", id, "recipe", recipe.Name, "provider", snap.Provider, "preset", preset.Name, "variations", req.Variations)
 	if s.runner != nil {
 		s.runner.Notify()
 	}
 	return s.GetGeneration(ctx, id)
 }
 
-// plan builds the snapshot: inputs, and each step's prompt and inputs.
-func (s *Service) plan(recipe Recipe, prov provider.Provider, ps Photoshoot, prod catalog.Product, model catalog.Model, variations int) Snapshot {
+// stepProviders chooses the provider of each recipe step: the one assigned
+// to the step's capability, else the request's default provider.
+func (s *Service) stepProviders(recipe Recipe, req GenerationRequest) ([]provider.Provider, error) {
+	known := map[string]bool{}
+	for _, c := range recipe.Capabilities() {
+		known[string(c)] = true
+	}
+	for c := range req.Providers {
+		if !known[c] {
+			return nil, invalid("providers", fmt.Sprintf("the %s recipe has no %s step", recipe.Label, c))
+		}
+	}
+	out := make([]provider.Provider, 0, len(recipe.Steps))
+	for _, st := range recipe.Steps {
+		name, field := req.Provider, "provider"
+		if n := req.Providers[string(st.Capability)]; n != "" {
+			name, field = n, "providers."+string(st.Capability)
+		}
+		if name == "" {
+			return nil, invalid(field, fmt.Sprintf("choose a provider for the %s step", st.Purpose))
+		}
+		p, err := s.providers.Get(name)
+		if err != nil {
+			return nil, invalid(field, fmt.Sprintf("%s is not configured", name))
+		}
+		if !provider.Supports(p, st.Capability) {
+			return nil, invalid(field, fmt.Sprintf("%s cannot run the %s step of the %s recipe", p.Label(), st.Purpose, recipe.Label))
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// plan builds the snapshot: inputs, and each step's provider, prompt and
+// inputs. provs holds the provider of each recipe step.
+func (s *Service) plan(recipe Recipe, provs []provider.Provider, ps Photoshoot, preset Preset, prod catalog.Product, model catalog.Model, variations int) Snapshot {
 	snap := Snapshot{
 		Recipe:             recipe.Name,
-		Provider:           prov.Name(),
+		Provider:           provs[len(provs)-1].Name(),
 		Variations:         variations,
 		AspectRatio:        ps.AspectRatio,
 		CustomInstructions: ps.CustomInstructions,
@@ -294,6 +355,11 @@ func (s *Service) plan(recipe Recipe, prov provider.Provider, ps Photoshoot, pro
 		Model: SnapshotModel{
 			ID: model.ID, Name: model.Name, Appearance: model.Appearance,
 			PreferredPoses: model.PreferredPoses, Styling: model.Styling,
+		},
+		Preset: SnapshotPreset{
+			ID: preset.ID, Slug: preset.Slug, Name: preset.Name, BuiltIn: preset.BuiltIn,
+			Environment: preset.Environment, Pose: preset.Pose, Framing: preset.Framing,
+			Lighting: preset.Lighting, Style: preset.Style, PromptFragment: preset.PromptFragment,
 		},
 	}
 
@@ -315,7 +381,7 @@ func (s *Service) plan(recipe Recipe, prov provider.Provider, ps Photoshoot, pro
 		models = append(models, pos)
 	}
 
-	pin := PromptInput{Product: prod, Model: model, AspectRatio: ps.AspectRatio, CustomInstructions: ps.CustomInstructions}
+	pin := PromptInput{Product: prod, Model: model, Preset: preset, AspectRatio: ps.AspectRatio, CustomInstructions: ps.CustomInstructions}
 	for i, spec := range recipe.Steps {
 		var inputs []int
 		if spec.UsesGarments {
@@ -343,8 +409,8 @@ func (s *Service) plan(recipe Recipe, prov provider.Provider, ps Photoshoot, pro
 			Position:      i + 1,
 			Capability:    string(spec.Capability),
 			Purpose:       spec.Purpose,
-			Provider:      prov.Name(),
-			ProviderModel: prov.Model(spec.Capability),
+			Provider:      provs[i].Name(),
+			ProviderModel: provs[i].Model(spec.Capability),
 			Prompt:        spec.Prompt(pin),
 			Inputs:        inputs,
 			UsesPrevious:  spec.UsesPrevious,

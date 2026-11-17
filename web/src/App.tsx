@@ -14,6 +14,7 @@ import { PhotoshootDetail } from './pages/photoshoots/PhotoshootDetail'
 import { PhotoshootList } from './pages/photoshoots/PhotoshootList'
 import { NewProduct } from './pages/products/NewProduct'
 import { ReviewGallery } from './pages/review/ReviewGallery'
+import { PresetList } from './pages/presets/PresetList'
 import { ReviewScreen } from './pages/review/ReviewScreen'
 import { ProductDetail } from './pages/products/ProductDetail'
 import { ProductList } from './pages/products/ProductList'
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="photoshoots" element={<PhotoshootList />} />
               <Route path="photoshoots/new" element={<NewPhotoshoot />} />
               <Route path="photoshoots/:id" element={<PhotoshootDetail />} />
+              <Route path="presets" element={<PresetList />} />
               <Route path="images/:id" element={<ImageDetailPage />} />
               <Route path="review" element={<ReviewGallery />} />
               <Route path="review/:id" element={<ReviewScreen />} />

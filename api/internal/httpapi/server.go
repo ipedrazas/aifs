@@ -101,6 +101,8 @@ func New(d Deps) http.Handler {
 	api.HandleFunc("GET /api/v1/images/{id}", st.getImage)
 	api.HandleFunc("POST /api/v1/images/{id}/review", st.reviewImage)
 	api.HandleFunc("GET /api/v1/providers", st.providers)
+	api.HandleFunc("GET /api/v1/presets", st.listPresets)
+	api.HandleFunc("GET /api/v1/presets/{id}", st.getPreset)
 
 	api.HandleFunc("GET /api/v1/blobs/{hash}", blobHandler(d))
 

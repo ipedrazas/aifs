@@ -27,7 +27,10 @@ type Photoshoot struct {
 	UpdatedAt          time.Time      `json:"updatedAt"`
 	Product            ProductSummary `json:"product"`
 	Model              ModelSummary   `json:"model"`
-	GenerationCount    int            `json:"generationCount"`
+	// PresetID is the preset generations use unless they choose another.
+	PresetID        int64         `json:"presetId"`
+	Preset          PresetSummary `json:"preset"`
+	GenerationCount int           `json:"generationCount"`
 	// LatestImageHash is the newest generated image, for list thumbnails.
 	LatestImageHash string `json:"latestImageHash"`
 	// Generations is only filled by GetPhotoshoot, newest first.
@@ -40,6 +43,13 @@ type ProductSummary struct {
 	Name      string `json:"name"`
 	SKU       string `json:"sku"`
 	CoverHash string `json:"coverHash"`
+}
+
+// PresetSummary identifies a preset in other resources.
+type PresetSummary struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	BuiltIn bool   `json:"builtIn"`
 }
 
 // ModelSummary identifies a model in other resources.
@@ -57,6 +67,8 @@ type PhotoshootInput struct {
 	ModelID            *int64  `json:"modelId"`
 	AspectRatio        *string `json:"aspectRatio"`
 	CustomInstructions *string `json:"customInstructions"`
+	// PresetID 0 (or absent on create) means the built-in studio preset.
+	PresetID *int64 `json:"presetId"`
 }
 
 const maxInstructions = 2000
@@ -126,11 +138,19 @@ func (s *Service) CreatePhotoshoot(ctx context.Context, in PhotoshootInput) (Pho
 	if in.CustomInstructions != nil {
 		instructions = *in.CustomInstructions
 	}
+	var presetID int64
+	if in.PresetID != nil {
+		presetID = *in.PresetID
+	}
+	preset, err := s.resolvePreset(ctx, presetID, "presetId")
+	if err != nil {
+		return Photoshoot{}, err
+	}
 
 	now := s.timestamp()
 	res, err := s.db.Write.ExecContext(ctx, `
-		INSERT INTO photoshoot (name, product_id, model_id, aspect_ratio, custom_instructions, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`, name, prod.ID, model.ID, ratio, instructions, now, now)
+		INSERT INTO photoshoot (name, product_id, model_id, aspect_ratio, custom_instructions, preset_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, name, prod.ID, model.ID, ratio, instructions, preset.ID, now, now)
 	if err != nil {
 		return Photoshoot{}, err
 	}
@@ -198,6 +218,13 @@ func (s *Service) UpdatePhotoshoot(ctx context.Context, id int64, in PhotoshootI
 	if in.CustomInstructions != nil {
 		sets, args = append(sets, "custom_instructions = ?"), append(args, *in.CustomInstructions)
 	}
+	if in.PresetID != nil {
+		preset, err := s.resolvePreset(ctx, *in.PresetID, "presetId")
+		if err != nil {
+			return Photoshoot{}, err
+		}
+		sets, args = append(sets, "preset_id = ?"), append(args, preset.ID)
+	}
 	sets, args = append(sets, "updated_at = ?"), append(args, s.timestamp())
 	args = append(args, id)
 	if _, err := s.db.Write.ExecContext(ctx, `UPDATE photoshoot SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...); err != nil { //nolint:gosec // column names are constants
@@ -229,11 +256,13 @@ const photoshootCols = `ps.id, ps.name, ps.product_id, ps.model_id, ps.aspect_ra
 	m.name, m.archived_at IS NOT NULL,
 	COALESCE((SELECT mi.blob_hash FROM model_image mi WHERE mi.model_id = m.id
 		ORDER BY CASE mi.role WHEN 'identity' THEN 0 ELSE 1 END, mi.id LIMIT 1), ''),
+	COALESCE(pr.id, 0), COALESCE(pr.name, ''), COALESCE(pr.built_in, 0),
 	(SELECT count(*) FROM generation g WHERE g.photoshoot_id = ps.id),
 	COALESCE((SELECT gi.blob_hash FROM generated_image gi JOIN generation g ON g.id = gi.generation_id
 		WHERE g.photoshoot_id = ps.id ORDER BY gi.id DESC LIMIT 1), '')`
 
-const photoshootFrom = ` FROM photoshoot ps JOIN product p ON p.id = ps.product_id JOIN model m ON m.id = ps.model_id`
+const photoshootFrom = ` FROM photoshoot ps JOIN product p ON p.id = ps.product_id JOIN model m ON m.id = ps.model_id
+	LEFT JOIN preset pr ON pr.id = ps.preset_id`
 
 type scanner interface{ Scan(...any) error }
 
@@ -244,9 +273,10 @@ func scanPhotoshoot(row scanner) (Photoshoot, error) {
 		&created, &updated,
 		&ps.Product.Name, &ps.Product.SKU, &ps.Product.CoverHash,
 		&ps.Model.Name, &ps.Model.Archived, &ps.Model.CoverHash,
+		&ps.Preset.ID, &ps.Preset.Name, &ps.Preset.BuiltIn,
 		&ps.GenerationCount, &ps.LatestImageHash)
 	ps.CreatedAt, ps.UpdatedAt = parseTime(created), parseTime(updated)
-	ps.Product.ID, ps.Model.ID = ps.ProductID, ps.ModelID
+	ps.Product.ID, ps.Model.ID, ps.PresetID = ps.ProductID, ps.ModelID, ps.Preset.ID
 	return ps, err
 }
 

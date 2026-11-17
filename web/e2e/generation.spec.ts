@@ -86,3 +86,40 @@ test('FASHN is listed but unavailable without a key; try-on on the model photo r
   await expect(page.getByText('sent to try-on')).toBeVisible()
   await expect(page.getByText('dressed by try-on')).toBeVisible()
 })
+
+test('both recipes run with a built-in preset and their results sit together', async ({ page }) => {
+  const providers = await (await page.request.get('/api/v1/providers')).json()
+  const gemini = providers.providers.find((p: { name: string }) => p.name === 'gemini')
+  expect(gemini.available).toBe(false)
+  expect(gemini.reason).toContain('AIFS_OPENROUTER_API_KEY')
+
+  await page.goto('/presets')
+  await expect(page.getByTestId('preset')).toHaveCount(4)
+  for (const name of ['Clean studio catalogue', 'Urban lifestyle', 'Coffee shop', 'Outdoor']) {
+    await expect(page.getByRole('heading', { name })).toBeVisible()
+  }
+
+  const ps = await seedPhotoshoot(page.request, 'E2E-PRESET')
+  await page.goto(`/photoshoots/${ps.id}`)
+  for (const recipe of ['reference', 'tryon']) {
+    await page.getByLabel('Recipe').selectOption(recipe)
+    await page.getByLabel('Preset', { exact: true }).selectOption({ label: 'Coffee shop' })
+    await page.getByLabel('Variations').fill('1')
+    await page.getByRole('button', { name: 'Generate' }).click()
+    await expect(page.getByTestId('generation').filter({ hasText: `${recipe} ·` })).toHaveCount(1)
+  }
+
+  const cards = page.getByTestId('generation')
+  await expect(cards).toHaveCount(2)
+  for (const card of await cards.all()) {
+    await expect(card).toHaveAttribute('data-status', 'succeeded', { timeout: 20_000 })
+    await expect(card.getByText(/Coffee shop/)).toBeVisible()
+  }
+
+  // The preset and the prompt are recorded with the generation.
+  const shoot = await (await page.request.get(`/api/v1/photoshoots/${ps.id}`)).json()
+  for (const g of shoot.generations) {
+    expect(g.settings.preset.slug).toBe('coffee-shop')
+    expect(g.prompt).toContain(g.settings.preset.environment)
+  }
+})
