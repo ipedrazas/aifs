@@ -13,7 +13,7 @@ RUN npm run build
 
 # --- backend ---------------------------------------------------------------
 # Cross-compiles on the build platform (no QEMU): CGO is off.
-FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:eb61c3873c97416fff0116553fff65d67a3549f72e11d9758849a689cdd8b523 AS api
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS api
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
  && mkdir -p /out/data
 
 # --- runtime ---------------------------------------------------------------
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 LABEL org.opencontainers.image.title="AI Fashion Studio" \
       org.opencontainers.image.source="https://github.com/ipedrazas/aifs" \
       org.opencontainers.image.licenses=""
